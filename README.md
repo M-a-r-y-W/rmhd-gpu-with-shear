@@ -54,72 +54,142 @@ python3 -m rmhdgpu.profiling.gpu_sanity --nx 32 --steps 6
 
 ## Running on Aoraki GPUs
 
-Use a user-local Conda or Miniforge environment rather than the system Python or site modules. That keeps the CuPy stack isolated, makes student setups reproducible, and avoids accidental mixing with `~/.local` packages.
+For this project, the most reliable setup on Aoraki is a user-local Conda environment. This avoids conflicts with the cluster’s system Python and makes the setup reproducible for students.
 
-Create an environment in a fixed user path:
+The main thing to remember is:
 
-```bash
+Do not use module load python for this project.
+
+That module can override the Conda environment and leave you using /opt/spack/.../python even after conda activate, which usually shows up as missing imports such as numpy or cupy.
+
+The recommended pattern is:
+
+module purge
+module load cuda
+source ~/.bashrc
+conda activate ~/conda-envs/curmpy
+
+Create the environment
+
+Create a dedicated environment in your home directory:
+
 mkdir -p ~/conda-envs
 conda create -y -p ~/conda-envs/curmpy python=3.11
 conda activate ~/conda-envs/curmpy
 python -m pip install --upgrade pip
 python -m pip install numpy scipy matplotlib pytest cupy
-```
 
-Add a small activation helper so you do not need to remember the full Conda path each time:
+Then check that the environment is actually providing the Python interpreter:
 
-```bash
+which python
+python -V
+python -c "import sys; print(sys.executable)"
+python -c "import numpy, scipy, matplotlib, cupy; print('Environment OK')"
+
+The which python and sys.executable outputs should point to something like
+
+/home/<username>/conda-envs/curmpy/bin/python
+
+not /opt/spack/....
+
+Optional activation helper
+
+To avoid typing the full activation sequence every time, add a small helper script:
+
 mkdir -p ~/bin
 cat > ~/bin/activate-curmpy <<'EOF'
 #!/usr/bin/env bash
-source ~/miniforge3/etc/profile.d/conda.sh
+source ~/.bashrc
 export PYTHONNOUSERSITE=1
 conda activate ~/conda-envs/curmpy
 EOF
 chmod +x ~/bin/activate-curmpy
-```
 
-Typical interactive GPU workflow:
+You can also add an alias to ~/.bashrc:
 
-```bash
-srun --partition=gpu --gres=gpu:1 --cpus-per-task=8 --mem=32G --time=02:00:00 --pty bash
-source ~/bin/activate-curmpy
-cd ~/path/to/rmhd-gpu
+alias activate-curmpy="source ~/bin/activate-curmpy"
+
+Then, in a new shell, you can just run:
+
+activate-curmpy
+
+Interactive GPU workflow
+
+A typical interactive workflow on an H100 node looks like this:
+
+srun --partition=aoraki_gpu_H100 --gres=gpu:1 --cpus-per-task=8 --mem=32G --time=02:00:00 --pty bash
+module purge
+module load cuda
+source ~/.bashrc
+conda activate ~/conda-envs/curmpy
+cd ~/path/to/cuRMpy
+
+If you use the helper script, the middle part becomes:
+
+module purge
+module load cuda
+activate-curmpy
+
+Once the environment is active, you can run tests or examples as usual. For example:
+
 python -m pytest rmhdgpu/tests/test_cupy_backend.py rmhdgpu/tests/test_gpu_consistency.py
-python -m rmhdgpu.examples.sanity_decay_spectra --gpu-256
-python -m rmhdgpu.examples.sanity_forced_turbulence --gpu-256
-```
+python -m rmhdgpu.examples.sanity_decay_spectra --gpu
+python -m rmhdgpu.examples.sanity_forced_turbulence --gpu
 
-If your Aoraki account uses a different GPU partition name, replace `gpu` in the `srun` command.
+If your account uses a different GPU partition, replace aoraki_gpu_H100 with the appropriate one, such as aoraki_gpu_A100_80GB.
 
-Minimal batch-job skeleton:
+Batch / Slurm jobs
 
-```bash
+For batch jobs, activate the environment explicitly inside the job script. A minimal example is:
+
 #!/bin/bash
 #SBATCH --job-name=rmhdgpu
-#SBATCH --partition=gpu
+#SBATCH --partition=aoraki_gpu_H100
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 #SBATCH --time=02:00:00
 
-source ~/miniforge3/etc/profile.d/conda.sh
+module purge
+module load cuda
+source ~/.bashrc
 export PYTHONNOUSERSITE=1
 conda activate ~/conda-envs/curmpy
-cd ~/path/to/rmhd-gpu
+cd ~/path/to/cuRMpy
 
 python -m pytest rmhdgpu/tests/test_cupy_backend.py rmhdgpu/tests/test_gpu_consistency.py
-python -m rmhdgpu.examples.sanity_decay_spectra --gpu-256
-```
+python -m rmhdgpu.examples.sanity_decay_spectra --gpu
 
-Submit that with:
+Submit it with:
 
-```bash
 sbatch run_rmhdgpu.slurm
-```
 
-Codex CLI can be run from an interactive Aoraki session in the same way as any other terminal tool. Run it only after the environment is activated, and test the project inside that activated environment so imports and CuPy detection match the actual cluster run.
+Quick diagnostics
 
+If something seems wrong, check which Python is actually active:
+
+which python
+python -V
+python -c "import sys; print(sys.executable)"
+python -c "import numpy, cupy; print(numpy.__version__, cupy.__version__)"
+
+If which python points to /opt/spack/..., then the wrong Python is active and you are not actually using the Conda environment.
+
+Common mistakes
+
+The most common issues are:
+	•	running module load python
+	•	forgetting to activate the Conda environment in a fresh shell
+	•	assuming the shell prompt alone proves the environment is correct
+	•	using the system Python in a batch job instead of activating the environment explicitly
+
+When in doubt, always check:
+
+which python
+
+Codex on Aoraki
+
+Codex CLI can be run from an interactive Aoraki session in the same way as any other terminal tool. Run it only after the environment is activated, so imports, CuPy detection, and test behavior match the actual cluster run.
 ## Example Movie Frames
 
 The three main sanity scripts can optionally write x-y midplane PNG sequences of vorticity and current for later movie assembly:

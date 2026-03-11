@@ -252,7 +252,7 @@ def main() -> None:
     # Choose the dissipation scale at roughly half the dealiased perpendicular
     # maximum so the damping acts near the top of the retained inertial range
     # rather than all the way at the truncation boundary.
-    k_d = 0.7 * kperp_max_dealiased
+    k_d = 0.5 * kperp_max_dealiased
     nu_perp = estimate_hyperdiffusion_coefficient(k_d=k_d, k0=k0, u_rms=u_rms, order=3)
     nu_par = 0.1 * nu_perp
     print(

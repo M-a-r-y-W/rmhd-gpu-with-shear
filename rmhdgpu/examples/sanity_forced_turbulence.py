@@ -231,7 +231,7 @@ def main() -> None:
 
     k0 = 1.0
     kperp_max_dealiased = dealiased_max_kperp(grid, backend, mask)
-    k_d = 0.7 * kperp_max_dealiased
+    k_d = 0.5 * kperp_max_dealiased
     u_rms_guess = 1.0
     nu_perp = estimate_hyperdiffusion_coefficient(k_d=k_d, k0=k0, u_rms=u_rms_guess, order=3)
     nu_par = 0.1 * nu_perp
