@@ -29,6 +29,13 @@ from rmhdgpu.config import Config
 from rmhdgpu.diagnostics.scalar import compute_energy_diagnostics
 from rmhdgpu.diagnostics.spectra import PERPENDICULAR_SPECTRUM_KEYS, perpendicular_energy_spectrum_from_state
 from rmhdgpu.equations import s09
+from rmhdgpu.examples.frame_output import (
+    add_frame_arguments,
+    build_frame_times,
+    capture_xy_signed_fields,
+    resolve_snapshot_z_index,
+    write_signed_xy_frames,
+)
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
 from rmhdgpu.masks import build_dealias_mask
@@ -134,7 +141,7 @@ def _plot_summary(
     print(f"Saved {figure_path}")
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", default="sanity_plots", help="Directory where figures are written.")
     parser.add_argument("--backend", choices=["numpy", "scipy_cpu", "cupy"], default=DEFAULT_BACKEND)
@@ -147,7 +154,12 @@ def main() -> None:
         action="store_true",
         help="Shortcut for backend='cupy', n=256, and a shorter quick-check runtime.",
     )
-    args = parser.parse_args()
+    add_frame_arguments(parser)
+    return parser
+
+
+def resolve_run_parameters(args: argparse.Namespace) -> dict[str, object]:
+    """Resolve backend/grid defaults after CLI presets are applied."""
 
     backend_name = args.backend
     n = args.n
@@ -159,19 +171,30 @@ def main() -> None:
         fft_workers = None
         if args.t_final == DEFAULT_T_FINAL:
             t_final = GPU_256_T_FINAL
+    return {
+        "backend_name": backend_name,
+        "n": n,
+        "fft_workers": fft_workers,
+        "t_final": t_final,
+    }
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    run_params = resolve_run_parameters(args)
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     config = Config(
-        Nx=n,
-        Ny=n,
-        Nz=n,
-        backend=backend_name,
-        fft_workers=fft_workers,
+        Nx=run_params["n"],
+        Ny=run_params["n"],
+        Nz=run_params["n"],
+        backend=run_params["backend_name"],
+        fft_workers=run_params["fft_workers"],
         cfl_number=0.35,
         dt_max=1.5e-2,
-        tmax=t_final,
+        tmax=run_params["t_final"],
         use_variable_dt=True,
         use_forcing=True,
         n_min_force=1.0,
@@ -190,6 +213,7 @@ def main() -> None:
     fft = FFTManager(grid, backend)
     workspace = Workspace(grid, backend)
     mask = build_dealias_mask(grid, backend)
+    z_index = resolve_snapshot_z_index(grid, args.snapshot_z_index)
 
     print(
         "sanity_forced_turbulence setup",
@@ -200,6 +224,8 @@ def main() -> None:
             "t_final": config.tmax,
             "forcing_seed": config.forcing_seed,
             "gpu_256": args.gpu_256,
+            "save_frames": args.save_frames,
+            "snapshot_z_index": z_index,
         },
     )
 
@@ -241,12 +267,17 @@ def main() -> None:
     current = State(grid, backend, field_names=config.field_names)
     forcing_rng = backend.random_generator(config.forcing_seed)
     sample_times = np.linspace(0.0, config.tmax, 8)
+    frame_times = build_frame_times(config.tmax, args.frame_count) if args.save_frames else np.empty(0, dtype=np.float64)
     energy_history: list[dict[str, float]] = []
     spectra_history: list[dict[str, np.ndarray]] = []
+    frame_records: list[dict[str, object]] = []
 
     previous_time = 0.0
-    for sample_time in sample_times:
-        segment = float(sample_time - previous_time)
+    event_times = np.unique(np.concatenate([sample_times, frame_times])) if frame_times.size else sample_times
+    sample_index = 0
+    frame_index = 0
+    for event_time in event_times:
+        segment = float(event_time - previous_time)
         if segment > 0.0:
             current, _ = evolve_until(
                 current,
@@ -257,11 +288,26 @@ def main() -> None:
                 params=config,
                 forcing_rng=forcing_rng,
             )
-        energy_history.append(compute_energy_diagnostics(current, grid, fft, backend, workspace=workspace))
-        spectra_history.append(perpendicular_energy_spectrum_from_state(current, grid, backend))
-        previous_time = float(sample_time)
+        if sample_index < len(sample_times) and np.isclose(event_time, sample_times[sample_index]):
+            energy_history.append(compute_energy_diagnostics(current, grid, fft, backend, workspace=workspace))
+            spectra_history.append(perpendicular_energy_spectrum_from_state(current, grid, backend))
+            sample_index += 1
+        if frame_index < len(frame_times) and np.isclose(event_time, frame_times[frame_index]):
+            frame_records.append(
+                capture_xy_signed_fields(
+                    current,
+                    time=frame_times[frame_index],
+                    grid=grid,
+                    fft=fft,
+                    backend=backend,
+                    z_index=z_index,
+                )
+            )
+            frame_index += 1
+        previous_time = float(event_time)
 
     _plot_summary(sample_times, energy_history, sample_times, spectra_history, output_dir)
+    write_signed_xy_frames(frame_records, output_dir=output_dir, grid=grid, z_index=z_index)
 
     print(
         "forced-turbulence final summary",

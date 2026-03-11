@@ -23,6 +23,13 @@ import numpy as np
 from rmhdgpu.backend import build_backend
 from rmhdgpu.config import Config
 from rmhdgpu.equations import s09
+from rmhdgpu.examples.frame_output import (
+    add_frame_arguments,
+    build_frame_times,
+    capture_xy_signed_fields,
+    resolve_snapshot_z_index,
+    write_signed_xy_frames,
+)
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
 from rmhdgpu.masks import build_dealias_mask
@@ -51,11 +58,16 @@ def _packet_real_field(grid: object, backend: object) -> object:
     return field
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", default="sanity_plots", help="Directory where figures are written.")
     parser.add_argument("--nx", type=int, default=32, help="Grid resolution in each direction.")
-    args = parser.parse_args()
+    add_frame_arguments(parser)
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -67,6 +79,7 @@ def main() -> None:
     workspace = Workspace(grid, backend)
     mask = build_dealias_mask(grid, backend)
     linear_ops = s09.build_dissipation_operators(grid, config)
+    z_index = resolve_snapshot_z_index(grid, args.snapshot_z_index)
 
     phi_real = _packet_real_field(grid, backend)
     phi_hat = fft.r2c(phi_real) * mask
@@ -77,7 +90,9 @@ def main() -> None:
 
     tau_A = grid.Lz / config.vA
     sample_times = np.arange(0.0, 0.51 * tau_A, 0.1 * tau_A)
+    frame_times = build_frame_times(sample_times[-1], args.frame_count) if args.save_frames else np.empty(0, dtype=np.float64)
     samples: list[tuple[float, np.ndarray]] = []
+    frame_records: list[dict[str, object]] = []
     slice_x = grid.Nx // 3
     slice_y = grid.Ny // 4
 
@@ -91,14 +106,32 @@ def main() -> None:
 
     t = 0.0
     sample_index = 0
-    while sample_index < len(sample_times):
-        if t >= sample_times[sample_index] - 1.0e-15:
-            psi_real = backend.to_numpy(fft.c2r(state["psi"]))
-            samples.append((sample_times[sample_index] / tau_A, psi_real[slice_x, slice_y, :].copy()))
-            sample_index += 1
+    frame_index = 0
+    while sample_index < len(sample_times) or frame_index < len(frame_times):
+        next_profile_time = sample_times[sample_index] if sample_index < len(sample_times) else np.inf
+        next_frame_time = frame_times[frame_index] if frame_index < len(frame_times) else np.inf
+        target_time = min(next_profile_time, next_frame_time)
+
+        if t >= target_time - 1.0e-15:
+            if sample_index < len(sample_times) and next_profile_time <= target_time + 1.0e-15:
+                psi_real = backend.to_numpy(fft.c2r(state["psi"]))
+                samples.append((sample_times[sample_index] / tau_A, psi_real[slice_x, slice_y, :].copy()))
+                sample_index += 1
+            if frame_index < len(frame_times) and next_frame_time <= target_time + 1.0e-15:
+                frame_records.append(
+                    capture_xy_signed_fields(
+                        state,
+                        time=frame_times[frame_index],
+                        grid=grid,
+                        fft=fft,
+                        backend=backend,
+                        z_index=z_index,
+                    )
+                )
+                frame_index += 1
             continue
 
-        dt = min(config.dt_init, sample_times[sample_index] - t)
+        dt = min(config.dt_init, target_time - t)
         state = if_ssprk3_step(state, dt, s09.ideal_rhs, linear_ops, rhs_kwargs=rhs_kwargs)
         t += dt
 
@@ -116,6 +149,7 @@ def main() -> None:
     figure_path = output_dir / "sanity_aw_packet.png"
     fig.savefig(figure_path, dpi=160)
     print(f"Saved {figure_path}")
+    write_signed_xy_frames(frame_records, output_dir=output_dir, grid=grid, z_index=z_index)
 
 
 if __name__ == "__main__":

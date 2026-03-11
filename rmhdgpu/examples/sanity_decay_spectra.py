@@ -27,6 +27,13 @@ from rmhdgpu.backend import build_backend
 from rmhdgpu.config import Config
 from rmhdgpu.diagnostics.spectra import perpendicular_energy_spectrum_from_state
 from rmhdgpu.equations import s09
+from rmhdgpu.examples.frame_output import (
+    add_frame_arguments,
+    build_frame_times,
+    capture_xy_signed_fields,
+    resolve_snapshot_z_index,
+    write_signed_xy_frames,
+)
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
 from rmhdgpu.masks import build_dealias_mask
@@ -154,7 +161,7 @@ def _plot_spectra(
     print(f"Saved {figure_path}")
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", default="sanity_plots", help="Directory where figures are written.")
     parser.add_argument("--backend", choices=["numpy", "scipy_cpu", "cupy"], default=DEFAULT_BACKEND)
@@ -166,7 +173,12 @@ def main() -> None:
         action="store_true",
         help="Shortcut for backend='cupy', n=256, and a shorter quick-check runtime.",
     )
-    args = parser.parse_args()
+    add_frame_arguments(parser)
+    return parser
+
+
+def resolve_run_parameters(args: argparse.Namespace) -> dict[str, object]:
+    """Resolve backend/grid defaults after CLI presets are applied."""
 
     backend_name = args.backend
     n = args.n
@@ -178,19 +190,30 @@ def main() -> None:
         fft_workers = None
         if args.t_final == DEFAULT_T_FINAL:
             t_final = GPU_256_T_FINAL
+    return {
+        "backend_name": backend_name,
+        "n": n,
+        "fft_workers": fft_workers,
+        "t_final": t_final,
+    }
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    run_params = resolve_run_parameters(args)
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     config = Config(
-        Nx=n,
-        Ny=n,
-        Nz=n,
-        backend=backend_name,
-        fft_workers=fft_workers,
+        Nx=run_params["n"],
+        Ny=run_params["n"],
+        Nz=run_params["n"],
+        backend=run_params["backend_name"],
+        fft_workers=run_params["fft_workers"],
         cfl_number=0.5,
         dt_max=2.0e-2,
-        tmax=t_final,
+        tmax=run_params["t_final"],
         use_variable_dt=True,
     )
 
@@ -199,6 +222,7 @@ def main() -> None:
     fft = FFTManager(grid, backend)
     workspace = Workspace(grid, backend)
     mask = build_dealias_mask(grid, backend)
+    z_index = resolve_snapshot_z_index(grid, args.snapshot_z_index)
 
     print(
         "sanity_decay_spectra setup",
@@ -208,6 +232,8 @@ def main() -> None:
             "fft_workers": config.fft_workers,
             "t_final": config.tmax,
             "gpu_256": args.gpu_256,
+            "save_frames": args.save_frames,
+            "snapshot_z_index": z_index,
         },
     )
 
@@ -255,25 +281,46 @@ def main() -> None:
     }
 
     sample_times = np.linspace(0.0, config.tmax, 10)
+    frame_times = build_frame_times(config.tmax, args.frame_count) if args.save_frames else np.empty(0, dtype=np.float64)
     spectra_by_time: list[tuple[float, dict[str, np.ndarray]]] = []
+    frame_records: list[dict[str, object]] = []
 
     current = state
     t = 0.0
     sample_index = 0
-    while sample_index < len(sample_times):
-        if t >= sample_times[sample_index] - 1.0e-15:
-            spectra_by_time.append(
-                (sample_times[sample_index], perpendicular_energy_spectrum_from_state(current, grid, backend))
-            )
-            sample_index += 1
+    frame_index = 0
+    while sample_index < len(sample_times) or frame_index < len(frame_times):
+        next_spectrum_time = sample_times[sample_index] if sample_index < len(sample_times) else np.inf
+        next_frame_time = frame_times[frame_index] if frame_index < len(frame_times) else np.inf
+        target_time = min(next_spectrum_time, next_frame_time)
+
+        if t >= target_time - 1.0e-15:
+            if sample_index < len(sample_times) and next_spectrum_time <= target_time + 1.0e-15:
+                spectra_by_time.append(
+                    (sample_times[sample_index], perpendicular_energy_spectrum_from_state(current, grid, backend))
+                )
+                sample_index += 1
+            if frame_index < len(frame_times) and next_frame_time <= target_time + 1.0e-15:
+                frame_records.append(
+                    capture_xy_signed_fields(
+                        current,
+                        time=frame_times[frame_index],
+                        grid=grid,
+                        fft=fft,
+                        backend=backend,
+                        z_index=z_index,
+                    )
+                )
+                frame_index += 1
             continue
 
         dt = compute_cfl_timestep(current, grid, fft, config, workspace=workspace)
-        dt = min(dt, sample_times[sample_index] - t)
+        dt = min(dt, target_time - t)
         current = if_ssprk3_step(current, dt, s09.ideal_rhs, linear_ops, rhs_kwargs=rhs_kwargs)
         t += dt
 
     _plot_spectra(spectra_by_time, output_dir)
+    write_signed_xy_frames(frame_records, output_dir=output_dir, grid=grid, z_index=z_index)
 
 
 if __name__ == "__main__":
