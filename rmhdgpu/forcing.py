@@ -14,6 +14,11 @@ The forcing band is defined in integer Fourier mode-number magnitude
 `n = sqrt(nx^2 + ny^2 + nz^2)`
 
 rather than physical `k`.
+
+When the CuPy backend is active, random fields are generated with backend-side
+RNGs when available so the forcing path stays on device. A fixed seed is
+expected to be reproducible within a backend, but NumPy and CuPy sequences are
+not expected to match bitwise.
 """
 
 from __future__ import annotations
@@ -51,6 +56,60 @@ def forcing_shell_mask(
     return (n_mag >= float(n_min_force)) & (n_mag <= float(n_max_force))
 
 
+def _forcing_metadata(
+    grid: Any,
+    backend: Any,
+    *,
+    n_min_force: float,
+    n_max_force: float,
+    alpha_force: float,
+    workspace: Any | None = None,
+) -> dict[str, Any]:
+    cache_key = (
+        "forcing_metadata",
+        backend.backend_name,
+        grid.real_shape,
+        float(n_min_force),
+        float(n_max_force),
+        float(alpha_force),
+    )
+    if workspace is not None and cache_key in workspace.cache:
+        return workspace.cache[cache_key]
+
+    xp = backend.xp
+    n_mag = mode_number_magnitude(grid, backend)
+    band_mask = (n_mag >= float(n_min_force)) & (n_mag <= float(n_max_force))
+    n_safe = xp.where(n_mag > 0.0, n_mag, 1.0)
+    shaping = xp.where(band_mask, n_safe ** (-float(alpha_force)), 0.0).astype(
+        grid.real_dtype,
+        copy=False,
+    )
+    metadata = {
+        "band_mask": band_mask,
+        "shaping": shaping,
+    }
+    if workspace is not None:
+        workspace.cache[cache_key] = metadata
+    return metadata
+
+
+def _standard_normal_field(
+    rng: Any,
+    shape: tuple[int, ...],
+    dtype: Any,
+    backend: Any,
+) -> Any:
+    if rng is None:
+        rng = backend.random_generator()
+
+    try:
+        values = rng.standard_normal(shape, dtype=dtype)
+    except TypeError:
+        values = rng.standard_normal(shape)
+
+    return backend.asarray(values, dtype=dtype)
+
+
 def shaped_random_real_field(
     grid: Any,
     backend: Any,
@@ -59,7 +118,12 @@ def shaped_random_real_field(
     n_min_force: float,
     n_max_force: float,
     alpha_force: float,
-    rng: np.random.Generator,
+    rng: Any,
+    band_mask: Any | None = None,
+    shaping: Any | None = None,
+    out_real: Any | None = None,
+    out_hat: Any | None = None,
+    workspace: Any | None = None,
 ) -> tuple[Any, Any]:
     """Return a unit-RMS real field and its Fourier transform.
 
@@ -76,17 +140,26 @@ def shaped_random_real_field(
     outside the selected forcing band.
     """
 
-    real_noise_np = rng.standard_normal(grid.real_shape).astype(grid.real_dtype, copy=False)
-    real_noise = backend.asarray(real_noise_np, dtype=grid.real_dtype)
+    metadata = None
+    if band_mask is None or shaping is None:
+        metadata = _forcing_metadata(
+            grid,
+            backend,
+            n_min_force=n_min_force,
+            n_max_force=n_max_force,
+            alpha_force=alpha_force,
+            workspace=workspace,
+        )
+        if band_mask is None:
+            band_mask = metadata["band_mask"]
+        if shaping is None:
+            shaping = metadata["shaping"]
 
-    n_mag = mode_number_magnitude(grid, backend)
-    band_mask = forcing_shell_mask(grid, backend, n_min_force, n_max_force)
-    n_safe = backend.xp.where(n_mag > 0.0, n_mag, 1.0)
-    shaping = backend.xp.where(band_mask, n_safe ** (-float(alpha_force)), 0.0)
+    real_noise = _standard_normal_field(rng, grid.real_shape, grid.real_dtype, backend)
 
-    noise_hat = fft.r2c(real_noise)
-    shaped_hat = noise_hat * shaping
-    shaped_real = fft.c2r(shaped_hat)
+    shaped_hat = fft.r2c(real_noise, out=out_hat)
+    shaped_hat[...] *= shaping
+    shaped_real = fft.c2r(shaped_hat, out=out_real)
 
     rms = backend.scalar_to_float(backend.xp.sqrt(backend.xp.mean(shaped_real**2)))
     if not np.isfinite(rms) or rms <= 0.0:
@@ -95,8 +168,8 @@ def shaped_random_real_field(
             "Check the forcing band and spectral shaping parameters."
         )
 
-    shaped_real = shaped_real / rms
-    shaped_hat = fft.r2c(shaped_real)
+    shaped_real[...] /= rms
+    shaped_hat = fft.r2c(shaped_real, out=shaped_hat)
     shaped_hat[...] *= band_mask
     return shaped_real, shaped_hat
 
@@ -107,8 +180,10 @@ def generate_forcing_kick(
     fft: Any,
     backend: Any,
     config: Any,
-    rng: np.random.Generator,
+    rng: Any,
     dt: float,
+    workspace: Any | None = None,
+    out: State | None = None,
 ) -> State:
     """Return the additive stochastic forcing increment for one timestep.
 
@@ -117,11 +192,23 @@ def generate_forcing_kick(
     as RMS forcing strengths in field-units per `sqrt(time)`.
     """
 
-    kick = state.zeros_like()
+    kick = state.zeros_like() if out is None else out
+    kick.fill_zero()
     if not getattr(config, "use_forcing", False):
         return kick
 
     scale_dt = float(np.sqrt(dt))
+    metadata = _forcing_metadata(
+        grid,
+        backend,
+        n_min_force=float(getattr(config, "n_min_force")),
+        n_max_force=float(getattr(config, "n_max_force")),
+        alpha_force=float(getattr(config, "alpha_force")),
+        workspace=workspace,
+    )
+    scratch_real = None if workspace is None else workspace.real.get("r0")
+    scratch_hat = None if workspace is None else workspace.complex.get("c1")
+
     for field_name in kick.field_names:
         sigma = float(getattr(config, "force_amplitudes")[field_name])
         if sigma == 0.0:
@@ -135,16 +222,21 @@ def generate_forcing_kick(
             n_max_force=float(getattr(config, "n_max_force")),
             alpha_force=float(getattr(config, "alpha_force")),
             rng=rng,
+            band_mask=metadata["band_mask"],
+            shaping=metadata["shaping"],
+            out_real=scratch_real,
+            out_hat=scratch_hat,
+            workspace=workspace,
         )
         kick[field_name][...] = sigma * scale_dt * xi_hat
 
     return kick
 
 
-def apply_forcing_kick(state: State, forcing_kick: State) -> State:
-    """Return `state + forcing_kick` without mutating the input state."""
+def apply_forcing_kick(state: State, forcing_kick: State, *, inplace: bool = False) -> State:
+    """Return `state + forcing_kick`, optionally mutating `state` in place."""
 
-    result = state.copy()
+    result = state if inplace else state.copy()
     for field_name in result.field_names:
         result[field_name][...] += forcing_kick[field_name]
     return result

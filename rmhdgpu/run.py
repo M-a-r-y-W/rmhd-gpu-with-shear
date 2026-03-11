@@ -81,7 +81,7 @@ def main() -> None:
     steps = 0
     next_scalar_output = 0.0
     dt_last = config.dt_init
-    forcing_rng = np.random.default_rng(config.forcing_seed) if config.use_forcing else None
+    forcing_rng = backend.random_generator(config.forcing_seed) if config.use_forcing else None
     print(
         "backend configuration",
         {
@@ -98,14 +98,24 @@ def main() -> None:
 
         while t < config.tmax - 1.0e-15:
             if config.use_variable_dt:
-                dt = compute_cfl_timestep(state, grid, fft, config, dt_prev=dt_last)
+                dt = compute_cfl_timestep(state, grid, fft, config, dt_prev=dt_last, workspace=workspace)
             else:
                 dt = config.dt_init
             dt = min(dt, config.tmax - t)
             state = if_ssprk3_step(state, dt, s09.ideal_rhs, linear_ops, rhs_kwargs=rhs_kwargs)
             if config.use_forcing:
-                forcing_kick = generate_forcing_kick(state, grid, fft, backend, config, forcing_rng, dt)
-                state = apply_forcing_kick(state, forcing_kick)
+                forcing_kick = generate_forcing_kick(
+                    state,
+                    grid,
+                    fft,
+                    backend,
+                    config,
+                    forcing_rng,
+                    dt,
+                    workspace=workspace,
+                    out=workspace.get_state_buffer("forcing_kick", state.field_names),
+                )
+                state = apply_forcing_kick(state, forcing_kick, inplace=True)
             t += dt
             dt_last = dt
             steps += 1
@@ -116,14 +126,14 @@ def main() -> None:
                 check_state_finite(state, backend, time=t, step=steps, context="smoke run")
 
             if t >= next_scalar_output - 1.0e-15 or t >= config.tmax - 1.0e-15:
-                diagnostics = compute_scalar_diagnostics(state, grid, fft, backend)
+                diagnostics = compute_scalar_diagnostics(state, grid, fft, backend, workspace=workspace)
                 print(
                     "scalar diagnostics",
                     {
                         "t": t,
                         "dt": dt,
                         "psi_rms": diagnostics["psi_rms"],
-                        **compute_energy_diagnostics(state, grid, fft, backend),
+                        **compute_energy_diagnostics(state, grid, fft, backend, workspace=workspace),
                         "alfvenic_cross_helicity": alfvenic_cross_helicity(state, grid, fft),
                     },
                 )

@@ -66,6 +66,35 @@ class State:
     def copy(self) -> "State":
         return State(self.grid, self.backend, data=self._fields)
 
+    def copy_from(self, other: "State") -> "State":
+        """Overwrite this state with the contents of `other`."""
+
+        if self.field_names != other.field_names:
+            raise ValueError(
+                f"Field name mismatch in copy_from: {self.field_names!r} != {other.field_names!r}."
+            )
+        for name in self.field_names:
+            self[name][...] = other[name]
+        return self
+
+    def fill_zero(self) -> "State":
+        """Set every stored field to zero in place."""
+
+        for field in self._fields.values():
+            field[...] = 0.0
+        return self
+
+    def linear_combination_(self, terms: Iterable[tuple[complex | float, "State"]]) -> "State":
+        """Set this state to a linear combination of other states."""
+
+        terms_list = list(terms)
+        for name in self.field_names:
+            out = self[name]
+            out[...] = 0.0
+            for coefficient, state in terms_list:
+                out[...] += coefficient * state[name]
+        return self
+
     def zeros_like(self) -> "State":
         return State(self.grid, self.backend, field_names=self.field_names)
 
@@ -73,4 +102,3 @@ class State:
         for field in self._fields.values():
             apply_mask(field, mask)
         return self
-

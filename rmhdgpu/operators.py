@@ -75,23 +75,40 @@ def poisson_bracket(
     overwritten by later calls.
     """
 
-    dx_f_hat = dx(f_hat, grid)
-    dy_f_hat = dy(f_hat, grid)
-    dx_g_hat = dx(g_hat, grid)
-    dy_g_hat = dy(g_hat, grid)
-
+    xp = workspace.backend.xp
+    c0 = workspace.complex["c0"]
     r0 = workspace.real["r0"]
     r1 = workspace.real["r1"]
     r2 = workspace.real["r2"]
     r3 = workspace.real["r3"]
     r4 = workspace.real["r4"]
+    r5 = workspace.real.get("r5")
+    if r5 is None:
+        raise ValueError("Workspace needs at least six real buffers for the Poisson bracket.")
 
-    fft.c2r(dx_f_hat, out=r0)
-    fft.c2r(dy_f_hat, out=r1)
-    fft.c2r(dx_g_hat, out=r2)
-    fft.c2r(dy_g_hat, out=r3)
+    c0[...] = f_hat
+    c0 *= grid.kx
+    c0 *= 1j
+    fft.c2r(c0, out=r0)
 
-    r4[...] = r0 * r3 - r1 * r2
+    c0[...] = f_hat
+    c0 *= grid.ky
+    c0 *= 1j
+    fft.c2r(c0, out=r1)
+
+    c0[...] = g_hat
+    c0 *= grid.kx
+    c0 *= 1j
+    fft.c2r(c0, out=r2)
+
+    c0[...] = g_hat
+    c0 *= grid.ky
+    c0 *= 1j
+    fft.c2r(c0, out=r3)
+
+    xp.multiply(r0, r3, out=r4)
+    xp.multiply(r1, r2, out=r5)
+    r4[...] -= r5
 
     if out is None:
         out = workspace.complex["c0"]
@@ -101,4 +118,3 @@ def poisson_bracket(
         apply_mask(out, mask)
 
     return out
-

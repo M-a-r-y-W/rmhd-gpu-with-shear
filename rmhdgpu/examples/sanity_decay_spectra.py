@@ -4,6 +4,10 @@ Run with:
 
 `python -m rmhdgpu.examples.sanity_decay_spectra`
 
+or, for a quick single-GPU `256^3` check,
+
+`python -m rmhdgpu.examples.sanity_decay_spectra --gpu-256`
+
 The script performs a modest dissipative run from low-mode initial data and
 saves perpendicular shell spectra at several times.
 """
@@ -32,6 +36,13 @@ from rmhdgpu.steppers import compute_cfl_timestep, if_ssprk3_step
 from rmhdgpu.workspace import Workspace
 
 
+DEFAULT_BACKEND = "scipy_cpu"
+DEFAULT_GRID_SIZE = 128
+DEFAULT_T_FINAL = 4.0
+DEFAULT_FFT_WORKERS = 8
+GPU_256_T_FINAL = 1.0
+
+
 def estimate_hyperdiffusion_coefficient(k_d: float, k0: float, u_rms: float, order: int) -> float:
     """Estimate `nu` from `tau_nl^{-1}(k_d) ~ nu * k_d^(2 n)`.
 
@@ -54,10 +65,11 @@ def _low_mode_real_field(
     amplitude: float,
 ) -> object:
     rng = np.random.default_rng(seed)
-    x = backend.to_numpy(grid.x).reshape(grid.Nx, 1, 1)
-    y = backend.to_numpy(grid.y).reshape(1, grid.Ny, 1)
-    z = backend.to_numpy(grid.z).reshape(1, 1, grid.Nz)
-    field = np.zeros(grid.real_shape, dtype=np.float64)
+    xp = backend.xp
+    x = grid.x.reshape(grid.Nx, 1, 1)
+    y = grid.y.reshape(1, grid.Ny, 1)
+    z = grid.z.reshape(1, 1, grid.Nz)
+    field = backend.zeros(grid.real_shape, dtype=grid.real_dtype)
 
     for nx in range(1, 4):
         for ny in range(1, 4):
@@ -65,9 +77,9 @@ def _low_mode_real_field(
                 a_cos = rng.normal(scale=amplitude / 6.0)
                 a_sin = rng.normal(scale=amplitude / 6.0)
                 phase = nx * x + ny * y + nz * z
-                field += a_cos * np.cos(phase) + a_sin * np.sin(phase)
+                field += a_cos * xp.cos(phase) + a_sin * xp.sin(phase)
 
-    return backend.asarray(field.astype(grid.real_dtype, copy=False))
+    return field.astype(grid.real_dtype, copy=False)
 
 
 def _initial_u_rms(phi_hat: object, grid: object, fft: FFTManager, backend: object) -> float:
@@ -145,22 +157,40 @@ def _plot_spectra(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", default="sanity_plots", help="Directory where figures are written.")
-    parser.add_argument("--n", type=int, default=128, help="Grid resolution in each direction.")
-    parser.add_argument("--t-final", type=float, default=4.0, help="Final time.")
+    parser.add_argument("--backend", choices=["numpy", "scipy_cpu", "cupy"], default=DEFAULT_BACKEND)
+    parser.add_argument("--fft-workers", type=int, default=DEFAULT_FFT_WORKERS)
+    parser.add_argument("--n", type=int, default=DEFAULT_GRID_SIZE, help="Grid resolution in each direction.")
+    parser.add_argument("--t-final", type=float, default=DEFAULT_T_FINAL, help="Final time.")
+    parser.add_argument(
+        "--gpu-256",
+        action="store_true",
+        help="Shortcut for backend='cupy', n=256, and a shorter quick-check runtime.",
+    )
     args = parser.parse_args()
+
+    backend_name = args.backend
+    n = args.n
+    fft_workers = args.fft_workers
+    t_final = args.t_final
+    if args.gpu_256:
+        backend_name = "cupy"
+        n = 256
+        fft_workers = None
+        if args.t_final == DEFAULT_T_FINAL:
+            t_final = GPU_256_T_FINAL
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     config = Config(
-        Nx=args.n,
-        Ny=args.n,
-        Nz=args.n,
-        backend="scipy_cpu",
-        fft_workers=8,
+        Nx=n,
+        Ny=n,
+        Nz=n,
+        backend=backend_name,
+        fft_workers=fft_workers,
         cfl_number=0.5,
         dt_max=2.0e-2,
-        tmax=args.t_final,
+        tmax=t_final,
         use_variable_dt=True,
     )
 
@@ -169,6 +199,17 @@ def main() -> None:
     fft = FFTManager(grid, backend)
     workspace = Workspace(grid, backend)
     mask = build_dealias_mask(grid, backend)
+
+    print(
+        "sanity_decay_spectra setup",
+        {
+            "backend": config.backend,
+            "grid": grid.real_shape,
+            "fft_workers": config.fft_workers,
+            "t_final": config.tmax,
+            "gpu_256": args.gpu_256,
+        },
+    )
 
     state = State(grid, backend, field_names=config.field_names)
     phi_hat = fft.r2c(_low_mode_real_field(grid, backend, seed=1, amplitude=0.4)) * mask
@@ -227,7 +268,7 @@ def main() -> None:
             sample_index += 1
             continue
 
-        dt = compute_cfl_timestep(current, grid, fft, config)
+        dt = compute_cfl_timestep(current, grid, fft, config, workspace=workspace)
         dt = min(dt, sample_times[sample_index] - t)
         current = if_ssprk3_step(current, dt, s09.ideal_rhs, linear_ops, rhs_kwargs=rhs_kwargs)
         t += dt

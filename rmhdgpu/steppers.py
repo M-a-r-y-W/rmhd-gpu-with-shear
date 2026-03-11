@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import math
 from typing import Any, Iterable
 
@@ -15,16 +16,39 @@ from rmhdgpu.utils import check_state_finite
 def state_linear_combination(
     template: State,
     terms: Iterable[tuple[complex | float, State]],
+    out: State | None = None,
 ) -> State:
     """Return a linear combination of states using `template` for metadata."""
 
-    result = template.zeros_like()
-    for name in result.field_names:
-        out = result[name]
-        out[...] = 0.0
-        for coefficient, state in terms:
-            out[...] += coefficient * state[name]
-    return result
+    result = template.zeros_like() if out is None else out
+    return result.linear_combination_(terms)
+
+
+def _rhs_supports_out(rhs_func: Any) -> bool:
+    signature = inspect.signature(rhs_func)
+    return "out" in signature.parameters
+
+
+def _evaluate_rhs(
+    rhs_func: Any,
+    state: State,
+    *,
+    rhs_kwargs: dict[str, Any],
+    out: State | None = None,
+) -> State:
+    kwargs = dict(rhs_kwargs)
+    if out is None or not _rhs_supports_out(rhs_func):
+        result = rhs_func(state, **kwargs)
+        if out is None:
+            return result
+        return out.copy_from(result)
+    return rhs_func(state, out=out, **kwargs)
+
+
+def _scratch_state(workspace: Any, key: str, template: State) -> State:
+    if workspace is None:
+        return template.zeros_like()
+    return workspace.get_state_buffer(key, template.field_names)
 
 
 def ssprk3_step(
@@ -47,25 +71,74 @@ def ssprk3_step(
     """
 
     kwargs = {} if rhs_kwargs is None else dict(rhs_kwargs)
+    workspace = kwargs.get("workspace")
 
-    rhs0 = rhs_func(state, **kwargs)
-    stage1 = state_linear_combination(state, [(1.0, state), (dt, rhs0)])
+    rhs0 = _evaluate_rhs(
+        rhs_func,
+        state,
+        rhs_kwargs=kwargs,
+        out=_scratch_state(workspace, "ssprk_rhs0", state),
+    )
+    stage1 = state_linear_combination(
+        state,
+        [(1.0, state), (dt, rhs0)],
+        out=_scratch_state(workspace, "ssprk_stage1", state),
+    )
 
-    rhs1 = rhs_func(stage1, **kwargs)
-    predictor2 = state_linear_combination(stage1, [(1.0, stage1), (dt, rhs1)])
-    stage2 = state_linear_combination(state, [(0.75, state), (0.25, predictor2)])
+    rhs1 = _evaluate_rhs(
+        rhs_func,
+        stage1,
+        rhs_kwargs=kwargs,
+        out=_scratch_state(workspace, "ssprk_rhs1", state),
+    )
+    predictor2 = state_linear_combination(
+        stage1,
+        [(1.0, stage1), (dt, rhs1)],
+        out=_scratch_state(workspace, "ssprk_predictor2", state),
+    )
+    stage2 = state_linear_combination(
+        state,
+        [(0.75, state), (0.25, predictor2)],
+        out=_scratch_state(workspace, "ssprk_stage2", state),
+    )
 
-    rhs2 = rhs_func(stage2, **kwargs)
-    predictor3 = state_linear_combination(stage2, [(1.0, stage2), (dt, rhs2)])
+    rhs2 = _evaluate_rhs(
+        rhs_func,
+        stage2,
+        rhs_kwargs=kwargs,
+        out=_scratch_state(workspace, "ssprk_rhs2", state),
+    )
+    predictor3 = state_linear_combination(
+        stage2,
+        [(1.0, stage2), (dt, rhs2)],
+        out=_scratch_state(workspace, "ssprk_predictor3", state),
+    )
     return state_linear_combination(state, [(1.0 / 3.0, state), (2.0 / 3.0, predictor3)])
 
 
-def state_fieldwise_multiply(state: State, factors: dict[str, Any]) -> State:
+def state_fieldwise_multiply(
+    state: State,
+    factors: dict[str, Any],
+    out: State | None = None,
+) -> State:
     """Return a new state with each field multiplied by its matching factor."""
 
-    result = state.zeros_like()
+    result = state.zeros_like() if out is None else out
     for name in result.field_names:
         result[name][...] = factors[name] * state[name]
+    return result
+
+
+def state_fieldwise_divide(
+    state: State,
+    factors: dict[str, Any],
+    out: State | None = None,
+) -> State:
+    """Return a new state with each field divided by its matching factor."""
+
+    result = state.zeros_like() if out is None else out
+    for name in result.field_names:
+        result[name][...] = state[name] / factors[name]
     return result
 
 
@@ -74,11 +147,10 @@ def _build_exponential_factors(
     linear_ops: dict[str, Any],
     dt: float,
     fraction: float,
-    sign: float,
 ) -> dict[str, Any]:
     xp = state.backend.xp
     return {
-        name: xp.exp(sign * fraction * dt * linear_ops[name])
+        name: xp.exp(-fraction * dt * linear_ops[name])
         for name in state.field_names
     }
 
@@ -89,6 +161,7 @@ def compute_cfl_timestep(
     fft: Any,
     params: Any,
     dt_prev: float | None = None,
+    workspace: Any | None = None,
 ) -> float:
     """Estimate a CFL-limited timestep from perpendicular and parallel speeds.
 
@@ -110,11 +183,37 @@ def compute_cfl_timestep(
 
     phi_hat = derive_phi_hat(state["omega"], grid)
     psi_hat = state["psi"]
+    if workspace is None:
+        ux = -fft.c2r(dy(phi_hat, grid))
+        uy = fft.c2r(dx(phi_hat, grid))
+        bx = -fft.c2r(dy(psi_hat, grid))
+        by = fft.c2r(dx(psi_hat, grid))
+    else:
+        ux = workspace.real["r0"]
+        uy = workspace.real["r1"]
+        bx = workspace.real["r2"]
+        by = workspace.real["r3"]
+        c0 = workspace.complex["c0"]
 
-    ux = -fft.c2r(dy(phi_hat, grid))
-    uy = fft.c2r(dx(phi_hat, grid))
-    bx = -fft.c2r(dy(psi_hat, grid))
-    by = fft.c2r(dx(psi_hat, grid))
+        c0[...] = phi_hat
+        c0 *= grid.ky
+        c0 *= -1j
+        fft.c2r(c0, out=ux)
+
+        c0[...] = phi_hat
+        c0 *= grid.kx
+        c0 *= 1j
+        fft.c2r(c0, out=uy)
+
+        c0[...] = psi_hat
+        c0 *= grid.ky
+        c0 *= -1j
+        fft.c2r(c0, out=bx)
+
+        c0[...] = psi_hat
+        c0 *= grid.kx
+        c0 *= 1j
+        fft.c2r(c0, out=by)
 
     def _speed_max(field: Any) -> float:
         return backend.scalar_to_float(xp.max(xp.abs(field)))
@@ -187,29 +286,65 @@ def if_ssprk3_step(
     """
 
     kwargs = {} if rhs_kwargs is None else dict(rhs_kwargs)
+    workspace = kwargs.get("workspace")
 
-    exp_full = _build_exponential_factors(state, linear_ops, dt, 1.0, sign=-1.0)
-    exp_half = _build_exponential_factors(state, linear_ops, dt, 0.5, sign=-1.0)
-    exp_inv_full = _build_exponential_factors(state, linear_ops, dt, 1.0, sign=1.0)
-    exp_inv_half = _build_exponential_factors(state, linear_ops, dt, 0.5, sign=1.0)
+    exp_full = _build_exponential_factors(state, linear_ops, dt, 1.0)
+    exp_half = _build_exponential_factors(state, linear_ops, dt, 0.5)
 
-    k1 = ideal_rhs_func(state, **kwargs)
-    stage1_unscaled = state_linear_combination(state, [(1.0, state), (dt, k1)])
-    stage1 = state_fieldwise_multiply(stage1_unscaled, exp_full)
+    k1 = _evaluate_rhs(
+        ideal_rhs_func,
+        state,
+        rhs_kwargs=kwargs,
+        out=_scratch_state(workspace, "if_k1", state),
+    )
+    stage1_unscaled = state_linear_combination(
+        state,
+        [(1.0, state), (dt, k1)],
+        out=_scratch_state(workspace, "if_stage1_unscaled", state),
+    )
+    stage1 = state_fieldwise_multiply(
+        stage1_unscaled,
+        exp_full,
+        out=_scratch_state(workspace, "if_stage1", state),
+    )
 
-    n2 = ideal_rhs_func(stage1, **kwargs)
-    k2 = state_fieldwise_multiply(n2, exp_inv_full)
+    n2 = _evaluate_rhs(
+        ideal_rhs_func,
+        stage1,
+        rhs_kwargs=kwargs,
+        out=_scratch_state(workspace, "if_n2", state),
+    )
+    k2 = state_fieldwise_divide(
+        n2,
+        exp_full,
+        out=_scratch_state(workspace, "if_k2", state),
+    )
     stage2_unscaled = state_linear_combination(
         state,
         [(1.0, state), (0.25 * dt, k1), (0.25 * dt, k2)],
+        out=_scratch_state(workspace, "if_stage2_unscaled", state),
     )
-    stage2 = state_fieldwise_multiply(stage2_unscaled, exp_half)
+    stage2 = state_fieldwise_multiply(
+        stage2_unscaled,
+        exp_half,
+        out=_scratch_state(workspace, "if_stage2", state),
+    )
 
-    n3 = ideal_rhs_func(stage2, **kwargs)
-    k3 = state_fieldwise_multiply(n3, exp_inv_half)
+    n3 = _evaluate_rhs(
+        ideal_rhs_func,
+        stage2,
+        rhs_kwargs=kwargs,
+        out=_scratch_state(workspace, "if_n3", state),
+    )
+    k3 = state_fieldwise_divide(
+        n3,
+        exp_half,
+        out=_scratch_state(workspace, "if_k3", state),
+    )
     final_unscaled = state_linear_combination(
         state,
         [(1.0, state), (dt / 6.0, k1), (dt / 6.0, k2), (2.0 * dt / 3.0, k3)],
+        out=_scratch_state(workspace, "if_final_unscaled", state),
     )
     return state_fieldwise_multiply(final_unscaled, exp_full)
 
@@ -247,11 +382,11 @@ def evolve_until(
     if stepper_func is None:
         stepper_func = if_ssprk3_step
 
+    current = state
     forcing_rng_obj = forcing_rng
     if getattr(params_obj, "use_forcing", False) and forcing_rng_obj is None:
-        forcing_rng_obj = np.random.default_rng(getattr(params_obj, "forcing_seed", None))
+        forcing_rng_obj = current.backend.random_generator(getattr(params_obj, "forcing_seed", None))
 
-    current = state
     t = 0.0
     dt_prev: float | None = None
     steps = 0
@@ -263,7 +398,14 @@ def evolve_until(
         if fixed_dt is not None:
             dt = fixed_dt
         elif getattr(params_obj, "use_variable_dt", True):
-            dt = compute_cfl_timestep(current, grid, fft, params_obj, dt_prev=dt_prev)
+            dt = compute_cfl_timestep(
+                current,
+                grid,
+                fft,
+                params_obj,
+                dt_prev=dt_prev,
+                workspace=kwargs.get("workspace"),
+            )
         else:
             dt = float(getattr(params_obj, "dt_init"))
 
@@ -278,8 +420,13 @@ def evolve_until(
                 params_obj,
                 forcing_rng_obj,
                 dt,
+                workspace=kwargs.get("workspace"),
+                out=None if kwargs.get("workspace") is None else kwargs["workspace"].get_state_buffer(
+                    "forcing_kick",
+                    current.field_names,
+                ),
             )
-            current = apply_forcing_kick(current, forcing_kick)
+            current = apply_forcing_kick(current, forcing_kick, inplace=True)
         t += dt
         dt_prev = dt
         steps += 1

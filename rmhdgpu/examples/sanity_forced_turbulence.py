@@ -4,6 +4,10 @@ Run with:
 
 `python -m rmhdgpu.examples.sanity_forced_turbulence`
 
+or, for a quick single-GPU `256^3` check,
+
+`python -m rmhdgpu.examples.sanity_forced_turbulence --gpu-256`
+
 The script starts from zero initial conditions, applies white-in-time
 band-limited forcing, and saves a single multi-panel summary figure with the
 energy history and perpendicular spectra.
@@ -31,6 +35,13 @@ from rmhdgpu.masks import build_dealias_mask
 from rmhdgpu.state import State
 from rmhdgpu.steppers import evolve_until
 from rmhdgpu.workspace import Workspace
+
+
+DEFAULT_BACKEND = "scipy_cpu"
+DEFAULT_GRID_SIZE = 96
+DEFAULT_T_FINAL = 4.0
+DEFAULT_FFT_WORKERS = 8
+GPU_256_T_FINAL = 1.5
 
 
 def estimate_hyperdiffusion_coefficient(k_d: float, k0: float, u_rms: float, order: int) -> float:
@@ -126,23 +137,41 @@ def _plot_summary(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", default="sanity_plots", help="Directory where figures are written.")
-    parser.add_argument("--n", type=int, default=96, help="Grid resolution in each direction.")
-    parser.add_argument("--t-final", type=float, default=4, help="Final time.")
+    parser.add_argument("--backend", choices=["numpy", "scipy_cpu", "cupy"], default=DEFAULT_BACKEND)
+    parser.add_argument("--fft-workers", type=int, default=DEFAULT_FFT_WORKERS)
+    parser.add_argument("--n", type=int, default=DEFAULT_GRID_SIZE, help="Grid resolution in each direction.")
+    parser.add_argument("--t-final", type=float, default=DEFAULT_T_FINAL, help="Final time.")
     parser.add_argument("--forcing-seed", type=int, default=1234, help="Seed for the white-noise forcing.")
+    parser.add_argument(
+        "--gpu-256",
+        action="store_true",
+        help="Shortcut for backend='cupy', n=256, and a shorter quick-check runtime.",
+    )
     args = parser.parse_args()
+
+    backend_name = args.backend
+    n = args.n
+    fft_workers = args.fft_workers
+    t_final = args.t_final
+    if args.gpu_256:
+        backend_name = "cupy"
+        n = 256
+        fft_workers = None
+        if args.t_final == DEFAULT_T_FINAL:
+            t_final = GPU_256_T_FINAL
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     config = Config(
-        Nx=args.n,
-        Ny=args.n,
-        Nz=args.n,
-        backend="scipy_cpu",
-        fft_workers=8,
+        Nx=n,
+        Ny=n,
+        Nz=n,
+        backend=backend_name,
+        fft_workers=fft_workers,
         cfl_number=0.35,
         dt_max=1.5e-2,
-        tmax=args.t_final,
+        tmax=t_final,
         use_variable_dt=True,
         use_forcing=True,
         n_min_force=1.0,
@@ -161,6 +190,18 @@ def main() -> None:
     fft = FFTManager(grid, backend)
     workspace = Workspace(grid, backend)
     mask = build_dealias_mask(grid, backend)
+
+    print(
+        "sanity_forced_turbulence setup",
+        {
+            "backend": config.backend,
+            "grid": grid.real_shape,
+            "fft_workers": config.fft_workers,
+            "t_final": config.tmax,
+            "forcing_seed": config.forcing_seed,
+            "gpu_256": args.gpu_256,
+        },
+    )
 
     k0 = 1.0
     kperp_max_dealiased = dealiased_max_kperp(grid, backend, mask)
@@ -198,7 +239,7 @@ def main() -> None:
     }
 
     current = State(grid, backend, field_names=config.field_names)
-    forcing_rng = np.random.default_rng(config.forcing_seed)
+    forcing_rng = backend.random_generator(config.forcing_seed)
     sample_times = np.linspace(0.0, config.tmax, 8)
     energy_history: list[dict[str, float]] = []
     spectra_history: list[dict[str, np.ndarray]] = []
@@ -216,7 +257,7 @@ def main() -> None:
                 params=config,
                 forcing_rng=forcing_rng,
             )
-        energy_history.append(compute_energy_diagnostics(current, grid, fft, backend))
+        energy_history.append(compute_energy_diagnostics(current, grid, fft, backend, workspace=workspace))
         spectra_history.append(perpendicular_energy_spectrum_from_state(current, grid, backend))
         previous_time = float(sample_time)
 

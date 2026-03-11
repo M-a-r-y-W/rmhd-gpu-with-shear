@@ -1,6 +1,6 @@
 """Public package exports for rmhdgpu."""
 
-from rmhdgpu.backend import build_backend
+from rmhdgpu.backend import Backend, build_backend
 from rmhdgpu.config import Config
 from rmhdgpu.errors import NonFiniteStateError
 from rmhdgpu.fft import FFTManager
@@ -18,6 +18,7 @@ from rmhdgpu.workspace import Workspace
 
 __all__ = [
     "Config",
+    "Backend",
     "FFTManager",
     "NonFiniteStateError",
     "State",

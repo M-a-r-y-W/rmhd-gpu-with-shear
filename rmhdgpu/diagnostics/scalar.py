@@ -7,7 +7,13 @@ from typing import Any
 from rmhdgpu.diagnostics.alfvenic import alfvenic_energy
 
 
-def compute_scalar_diagnostics(state: Any, grid: Any, fft: Any, backend: Any) -> dict[str, float]:
+def compute_scalar_diagnostics(
+    state: Any,
+    grid: Any,
+    fft: Any,
+    backend: Any,
+    workspace: Any | None = None,
+) -> dict[str, float]:
     """Compute basic real-space scalar diagnostics for each field.
 
     Each Fourier field is inverse transformed to real space, then the following
@@ -20,9 +26,10 @@ def compute_scalar_diagnostics(state: Any, grid: Any, fft: Any, backend: Any) ->
 
     xp = backend.xp
     diagnostics: dict[str, float] = {}
+    scratch_real = None if workspace is None else workspace.real.get("r0")
 
     for name in state.field_names:
-        field_real = fft.c2r(state[name])
+        field_real = fft.c2r(state[name], out=scratch_real)
         diagnostics[f"{name}_mean"] = backend.scalar_to_float(xp.mean(field_real))
         diagnostics[f"{name}_rms"] = backend.scalar_to_float(xp.sqrt(xp.mean(field_real**2)))
         diagnostics[f"{name}_max_abs"] = backend.scalar_to_float(xp.max(xp.abs(field_real)))
@@ -30,7 +37,13 @@ def compute_scalar_diagnostics(state: Any, grid: Any, fft: Any, backend: Any) ->
     return diagnostics
 
 
-def compute_energy_diagnostics(state: Any, grid: Any, fft: Any, backend: Any) -> dict[str, float]:
+def compute_energy_diagnostics(
+    state: Any,
+    grid: Any,
+    fft: Any,
+    backend: Any,
+    workspace: Any | None = None,
+) -> dict[str, float]:
     """Return a small set of quadratic energy-like diagnostics.
 
     The returned values are volume averages in real space:
@@ -47,9 +60,14 @@ def compute_energy_diagnostics(state: Any, grid: Any, fft: Any, backend: Any) ->
         "alfvenic_energy": alfvenic_energy(state, grid, fft),
     }
 
-    upar_real = fft.c2r(state["upar"])
-    dbpar_real = fft.c2r(state["dbpar"])
-    entropy_real = fft.c2r(state["s"])
+    if workspace is None:
+        upar_real = fft.c2r(state["upar"])
+        dbpar_real = fft.c2r(state["dbpar"])
+        entropy_real = fft.c2r(state["s"])
+    else:
+        upar_real = fft.c2r(state["upar"], out=workspace.real["r0"])
+        dbpar_real = fft.c2r(state["dbpar"], out=workspace.real["r1"])
+        entropy_real = fft.c2r(state["s"], out=workspace.real["r2"])
 
     diagnostics["upar_energy"] = backend.scalar_to_float(0.5 * xp.mean(upar_real**2))
     diagnostics["dbpar_energy"] = backend.scalar_to_float(0.5 * xp.mean(dbpar_real**2))

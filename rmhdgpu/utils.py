@@ -13,10 +13,11 @@ def max_abs_finite(arr: Any, backend: Any) -> float:
     """Return the maximum absolute value over the finite entries of `arr`."""
 
     finite_mask = backend.xp.isfinite(arr)
-    finite_values = backend.xp.abs(arr[finite_mask])
-    if getattr(finite_values, "size", 0) == 0:
+    finite_count = backend.scalar_to_int(backend.xp.count_nonzero(finite_mask))
+    if finite_count == 0:
         return float("nan")
-    return backend.scalar_to_float(backend.xp.max(finite_values))
+    finite_abs = backend.xp.where(finite_mask, backend.xp.abs(arr), 0.0)
+    return backend.scalar_to_float(backend.xp.max(finite_abs))
 
 
 def check_state_finite(
@@ -35,7 +36,7 @@ def check_state_finite(
     for name in state.field_names:
         arr = state[name]
         nonfinite_mask = ~backend_obj.xp.isfinite(arr)
-        nonfinite_count = int(np.asarray(backend_obj.to_numpy(backend_obj.xp.sum(nonfinite_mask))).item())
+        nonfinite_count = backend_obj.scalar_to_int(backend_obj.xp.count_nonzero(nonfinite_mask))
         if nonfinite_count > 0:
             failures.append((name, nonfinite_count, max_abs_finite(arr, backend_obj)))
 

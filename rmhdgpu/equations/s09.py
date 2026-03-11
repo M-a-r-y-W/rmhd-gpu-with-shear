@@ -100,6 +100,7 @@ def ideal_rhs(
     workspace: Any,
     params: Any,
     dealias_mask: Any | None = None,
+    out: State | None = None,
 ) -> State:
     """Return the Fourier-space RHS of the ideal homogeneous five-field system."""
 
@@ -115,7 +116,8 @@ def ideal_rhs(
     phi_hat = derive_phi_hat(omega_hat, grid)
     lap_psi_hat = lap_perp(psi_hat, grid)
 
-    rhs_state = state.zeros_like()
+    rhs_state = state.zeros_like() if out is None else out
+    rhs_state.fill_zero()
 
     rhs_psi = rhs_state["psi"]
     rhs_psi[...] = vA * dz(phi_hat, grid)
@@ -206,6 +208,7 @@ def rhs(
     workspace: Any,
     params: Any,
     dealias_mask: Any | None = None,
+    out: State | None = None,
 ) -> State:
     """Backward-compatible alias for the ideal RHS.
 
@@ -214,7 +217,7 @@ def rhs(
     system remains directly accessible for invariant and linear-behavior tests.
     """
 
-    return ideal_rhs(state, grid, fft, workspace, params, dealias_mask=dealias_mask)
+    return ideal_rhs(state, grid, fft, workspace, params, dealias_mask=dealias_mask, out=out)
 
 
 def linear_matrix(kx: float, ky: float, kz: float, params: Any) -> np.ndarray:

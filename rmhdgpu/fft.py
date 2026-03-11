@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
 
@@ -29,23 +30,30 @@ class FFTManager:
         self.grid = grid
         self.backend = backend
         self.xp = backend.xp
+        self.axes = (0, 1, 2)
+        self.real_shape = grid.real_shape
+
+        if self.backend.backend_name == "scipy_cpu":
+            self._rfftn = partial(
+                self.backend.scipy_fft.rfftn,
+                s=self.real_shape,
+                axes=self.axes,
+                workers=self.backend.fft_workers,
+            )
+            self._irfftn = partial(
+                self.backend.scipy_fft.irfftn,
+                s=self.real_shape,
+                axes=self.axes,
+                workers=self.backend.fft_workers,
+            )
+        else:
+            self._rfftn = partial(self.xp.fft.rfftn, s=self.real_shape, axes=self.axes)
+            self._irfftn = partial(self.xp.fft.irfftn, s=self.real_shape, axes=self.axes)
 
     def r2c(self, f_real: Any, out: Any | None = None) -> Any:
         """Transform a real field to `rfftn` Fourier storage."""
 
-        if self.backend.backend_name == "scipy_cpu":
-            transformed = self.backend.scipy_fft.rfftn(
-                f_real,
-                s=self.grid.real_shape,
-                axes=(0, 1, 2),
-                workers=self.backend.fft_workers,
-            )
-        else:
-            transformed = self.xp.fft.rfftn(
-                f_real,
-                s=self.grid.real_shape,
-                axes=(0, 1, 2),
-            )
+        transformed = self._rfftn(f_real)
         if out is not None:
             out[...] = transformed
             return out
@@ -54,19 +62,7 @@ class FFTManager:
     def c2r(self, f_hat: Any, out: Any | None = None) -> Any:
         """Transform an `rfftn` Fourier field back to real space."""
 
-        if self.backend.backend_name == "scipy_cpu":
-            transformed = self.backend.scipy_fft.irfftn(
-                f_hat,
-                s=self.grid.real_shape,
-                axes=(0, 1, 2),
-                workers=self.backend.fft_workers,
-            )
-        else:
-            transformed = self.xp.fft.irfftn(
-                f_hat,
-                s=self.grid.real_shape,
-                axes=(0, 1, 2),
-            )
+        transformed = self._irfftn(f_hat)
         if out is not None:
             out[...] = transformed
             return out

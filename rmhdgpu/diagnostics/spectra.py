@@ -10,6 +10,7 @@ from rmhdgpu.equations.s09 import derive_phi_hat
 
 
 PERPENDICULAR_SPECTRUM_KEYS = ("u_perp", "b_perp", "upar", "dbpar", "s")
+_SPECTRUM_GRID_CACHE: dict[tuple[int, int, int, float, float, float], tuple[np.ndarray, np.ndarray]] = {}
 
 
 def _rfft_weights(grid: Any) -> np.ndarray:
@@ -19,6 +20,18 @@ def _rfft_weights(grid: Any) -> np.ndarray:
     else:
         weights[..., 1:] = 2.0
     return weights
+
+
+def _cached_spectrum_grid_arrays(grid: Any, backend: Any) -> tuple[np.ndarray, np.ndarray]:
+    cache_key = (grid.Nx, grid.Ny, grid.Nz, float(grid.Lx), float(grid.Ly), float(grid.Lz))
+    cached = _SPECTRUM_GRID_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    kperp_np = np.sqrt(backend.to_numpy(grid.kperp2))
+    weights = _rfft_weights(grid)
+    _SPECTRUM_GRID_CACHE[cache_key] = (kperp_np, weights)
+    return kperp_np, weights
 
 
 def perpendicular_shell_spectrum(
@@ -39,8 +52,7 @@ def perpendicular_shell_spectrum(
     """
 
     density_np = backend.to_numpy(density_hat)
-    kperp_np = np.sqrt(backend.to_numpy(grid.kperp2))
-    weights = _rfft_weights(grid)
+    kperp_np, weights = _cached_spectrum_grid_arrays(grid, backend)
     normalization = float(np.prod(grid.real_shape) ** 2)
     modal_density = weights * density_np / normalization
 

@@ -48,6 +48,38 @@ class Backend:
             return float(value.item())
         return float(np.asarray(value))
 
+    def scalar_to_int(self, value: Any) -> int:
+        """Convert a scalar reduction result into a Python int."""
+
+        if self.is_gpu and hasattr(value, "item"):
+            return int(value.item())
+        return int(np.asarray(value))
+
+    def random_generator(self, seed: int | None = None) -> Any:
+        """Return a backend-native random generator when available."""
+
+        default_rng = getattr(self.xp.random, "default_rng", None)
+        if default_rng is not None:
+            return default_rng(seed)
+        if self.is_gpu:
+            return self.xp.random.RandomState(seed)
+        return np.random.default_rng(seed)
+
+    def synchronize(self) -> None:
+        """Synchronize outstanding device work for timing-sensitive paths."""
+
+        if not self.is_gpu:
+            return
+
+        runtime = getattr(getattr(self.xp, "cuda", None), "runtime", None)
+        if runtime is not None and hasattr(runtime, "deviceSynchronize"):
+            runtime.deviceSynchronize()
+            return
+
+        stream_cls = getattr(getattr(self.xp, "cuda", None), "Stream", None)
+        if stream_cls is not None and hasattr(stream_cls, "null"):
+            stream_cls.null.synchronize()
+
 
 def build_backend(config: Any) -> Backend:
     """Build the requested array backend from a configuration object."""
