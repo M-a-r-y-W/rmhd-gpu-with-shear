@@ -155,6 +155,12 @@ def _build_exponential_factors(
     }
 
 
+def _print_progress(step: int, time: float, dt: float) -> None:
+    """Emit a compact progress line for long-running batch jobs."""
+
+    print(f"progress step={step} t={time:.6e} dt={dt:.6e}")
+
+
 def compute_cfl_timestep(
     state: State,
     grid: Any,
@@ -381,6 +387,7 @@ def evolve_until(
         check_every = int(getattr(params_obj, "runtime_check_every", 1))
     if stepper_func is None:
         stepper_func = if_ssprk3_step
+    progress_output_every = getattr(params_obj, "progress_output_every", None)
 
     current = state
     forcing_rng_obj = forcing_rng
@@ -430,6 +437,11 @@ def evolve_until(
         t += dt
         dt_prev = dt
         steps += 1
+
+        if progress_output_every is not None:
+            should_report_progress = (steps % progress_output_every == 0) or (t >= t_final - 1.0e-15)
+            if should_report_progress:
+                _print_progress(steps, t, dt)
 
         if getattr(params_obj, "fail_on_nonfinite", True):
             should_check = (steps % check_every == 0) or (t >= t_final - 1.0e-15)

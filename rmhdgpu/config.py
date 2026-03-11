@@ -53,6 +53,7 @@ class Config:
     dt_max: float | None = None
     use_variable_dt: bool = True
     runtime_check_every: int = 10
+    progress_output_every: int | None = 100
     fail_on_nonfinite: bool = True
     t_out_scal: float = 0.1
     t_out_spec: float = 0.1
@@ -129,6 +130,13 @@ class Config:
                 f"runtime_check_every must be a positive integer; got {self.runtime_check_every!r}."
             )
         self.runtime_check_every = int(self.runtime_check_every)
+        if self.progress_output_every is not None:
+            if not isinstance(self.progress_output_every, (int, np.integer)) or self.progress_output_every <= 0:
+                raise ValueError(
+                    f"progress_output_every must be a positive integer when provided; "
+                    f"got {self.progress_output_every!r}."
+                )
+            self.progress_output_every = int(self.progress_output_every)
 
         self.real_dtype = np.dtype(self.real_dtype)
         self.complex_dtype = np.dtype(self.complex_dtype)

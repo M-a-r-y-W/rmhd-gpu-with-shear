@@ -125,6 +125,7 @@ def test_evolution_loop_stops_on_nonfinite() -> None:
 def test_runtime_check_interval_respected(monkeypatch: pytest.MonkeyPatch) -> None:
     config, backend, grid, fft = _build_context()
     config.runtime_check_every = 2
+    config.progress_output_every = None
     state = _finite_state(grid, backend)
     linear_ops = _zero_linear_ops(state)
     rhs_kwargs = {
@@ -162,3 +163,38 @@ def test_runtime_check_interval_respected(monkeypatch: pytest.MonkeyPatch) -> No
         (2, pytest.approx(0.2), "time integration"),
         (3, pytest.approx(0.3), "time integration"),
     ]
+
+
+def test_progress_output_interval_respected(capsys: pytest.CaptureFixture[str]) -> None:
+    config, backend, grid, fft = _build_context()
+    config.progress_output_every = 2
+    state = _finite_state(grid, backend)
+    linear_ops = _zero_linear_ops(state)
+    rhs_kwargs = {
+        "grid": grid,
+        "fft": fft,
+        "workspace": None,
+        "params": config,
+        "dealias_mask": None,
+    }
+
+    def identity_stepper(current: State, dt: float, ideal_rhs_func: object, linear_ops: object, rhs_kwargs=None) -> State:
+        return current.copy()
+
+    final_state, info = evolve_until(
+        state,
+        0.3,
+        _zero_rhs,
+        linear_ops,
+        rhs_kwargs=rhs_kwargs,
+        params=config,
+        fixed_dt=0.1,
+        stepper_func=identity_stepper,
+    )
+
+    captured = capsys.readouterr()
+    assert final_state.field_names == state.field_names
+    assert info["steps"] == 3
+    assert "progress step=2" in captured.out
+    assert "progress step=3" in captured.out
+    assert "progress step=1" not in captured.out

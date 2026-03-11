@@ -17,7 +17,7 @@ from rmhdgpu.forcing import apply_forcing_kick, generate_forcing_kick
 from rmhdgpu.grid import build_grid
 from rmhdgpu.initconds.eigenmodes import alfven_mode_state
 from rmhdgpu.masks import build_dealias_mask
-from rmhdgpu.steppers import compute_cfl_timestep, if_ssprk3_step
+from rmhdgpu.steppers import _print_progress, compute_cfl_timestep, if_ssprk3_step
 from rmhdgpu.utils import check_state_finite
 from rmhdgpu.workspace import Workspace
 
@@ -33,6 +33,7 @@ def main() -> None:
     parser.add_argument("--use-forcing", action="store_true")
     parser.add_argument("--force-sigma", type=float, default=5.0e-2)
     parser.add_argument("--forcing-seed", type=int, default=1234)
+    parser.add_argument("--progress-output-every", type=int, default=100)
     args = parser.parse_args()
 
     config = Config(
@@ -46,6 +47,7 @@ def main() -> None:
         tmax=args.tmax,
         use_forcing=args.use_forcing,
         forcing_seed=args.forcing_seed,
+        progress_output_every=args.progress_output_every,
     )
     config.dissipation["psi"]["nu_perp"] = 5.0e-3
     config.dissipation["omega"]["nu_perp"] = 5.0e-3
@@ -119,6 +121,11 @@ def main() -> None:
             t += dt
             dt_last = dt
             steps += 1
+
+            if config.progress_output_every is not None and (
+                steps % config.progress_output_every == 0 or t >= config.tmax - 1.0e-15
+            ):
+                _print_progress(steps, t, dt)
 
             if config.fail_on_nonfinite and (
                 steps % config.runtime_check_every == 0 or t >= config.tmax - 1.0e-15
