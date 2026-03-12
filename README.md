@@ -71,9 +71,9 @@ source ~/.bashrc
 conda activate ~/conda-envs/curmpy
 ```
 
-Create the environment
+### Create the environment
 
-Create a dedicated environment in your home directory:
+Before doing this, you have to create a dedicated environment in your home directory:
 
 ```bash
 mkdir -p ~/conda-envs
@@ -100,7 +100,7 @@ The which python and sys.executable outputs should point to something like
 
 not `/opt/spack/....`
 
-Optional activation helper
+### Optional activation helper
 
 To avoid typing the full activation sequence every time, add a small helper script:
 
@@ -127,7 +127,7 @@ Then, in a new shell, you can just run:
 activate-curmpy
 ```
 
-Interactive GPU workflow
+### Interactive GPU workflow
 
 A typical interactive workflow on an H100 node looks like this:
 
