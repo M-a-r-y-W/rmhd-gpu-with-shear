@@ -34,6 +34,28 @@ GPU-focused tests skip cleanly when CuPy is unavailable or when a usable CUDA de
 - [`test_gpu_runtime_checks.py`](/home/squjo23p/rmhd-gpu/rmhdgpu/tests/test_gpu_runtime_checks.py)
 - [`test_gpu_benchmarks.py`](/home/squjo23p/rmhd-gpu/rmhdgpu/tests/test_gpu_benchmarks.py)
 
+## Running the code
+
+The main script to run the code is `run.py`. This can be edited to change options or features (this will be updated to read a run file). 
+
+From inside the main folder (where `Readme.md` lives):
+
+```
+python -m rmhdgpu.run --options
+```
+
+There are a few of example scripts, modelled on `run.py`, that can act as qualitative checks that everything is working (see `examples` folder). For example, a decaying turbulence test (from random, large-scale noise):
+
+```
+python -m rmhdgpu.examples.sanity_decay_spectra 
+```
+or on a GPU at 384^3, saving 20 frames to make a movie:
+```
+python -m rmhdgpu.examples.sanity_decay_spectra --t-final 8.0 --n 384 --backend cupy --save-frames --frame-count 20
+```
+
+You can use `-h` on tests and examples to return a list of the options available. 
+
 ## Profiling
 
 The profiling utilities live under [`rmhdgpu/profiling`](/home/squjo23p/rmhd-gpu/rmhdgpu/profiling):
@@ -45,11 +67,11 @@ The profiling utilities live under [`rmhdgpu/profiling`](/home/squjo23p/rmhd-gpu
 Typical commands:
 
 ```bash
-python3 -m pytest rmhdgpu/tests/test_cupy_backend.py rmhdgpu/tests/test_gpu_consistency.py rmhdgpu/tests/test_gpu_runtime_checks.py rmhdgpu/tests/test_gpu_benchmarks.py
-python3 -m pytest
-python3 -m rmhdgpu.profiling.benchmark_backends --backend numpy --backend scipy_cpu --backend cupy --nx 64 --nx 96 --steps 10
-python3 -m rmhdgpu.profiling.profile_timestep --backend cupy --nx 64 --repeats 2
-python3 -m rmhdgpu.profiling.gpu_sanity --nx 32 --steps 6
+python -m pytest rmhdgpu/tests/test_cupy_backend.py rmhdgpu/tests/test_gpu_consistency.py rmhdgpu/tests/test_gpu_runtime_checks.py rmhdgpu/tests/test_gpu_benchmarks.py
+python -m pytest
+python -m rmhdgpu.profiling.benchmark_backends --backend numpy --backend scipy_cpu --backend cupy --nx 64 --nx 96 --steps 10
+python -m rmhdgpu.profiling.profile_timestep --backend cupy --nx 64 --repeats 2
+python -m rmhdgpu.profiling.gpu_sanity --nx 32 --steps 6
 ```
 
 ## Running on Aoraki GPUs
@@ -210,15 +232,3 @@ When in doubt, always check: `which python`
 ### Codex on Aoraki
 
 Codex CLI can be run from an interactive Aoraki session in the same way as any other terminal tool. Run it only after the environment is activated, so imports, CuPy detection, and test behavior match the actual cluster run.
-
-## Example Movie Frames
-
-The three main sanity scripts can optionally write x-y midplane PNG sequences of vorticity and current for later movie assembly:
-
-```bash
-python -m rmhdgpu.examples.sanity_aw_packet --save-frames --frame-count 12
-python -m rmhdgpu.examples.sanity_decay_spectra --save-frames --frame-count 12
-python -m rmhdgpu.examples.sanity_forced_turbulence --save-frames --frame-count 12
-```
-
-Use `--snapshot-z-index` to choose a different plane. Frames are written into `frames_vorticity/` and `frames_current/` inside the chosen output directory, with fixed symmetric color limits per run so the resulting movie does not rescale from frame to frame.
