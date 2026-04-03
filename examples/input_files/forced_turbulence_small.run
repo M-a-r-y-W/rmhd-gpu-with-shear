@@ -1,0 +1,46 @@
+# `.run` files use TOML syntax.
+title = "Small forced turbulence"
+output_dir = "outputs"
+
+[grid]
+Nx = 16
+Ny = 16
+Nz = 16
+
+[time]
+tmax = 0.1
+dt_init = 0.005
+dt_max = 0.02
+t_out_scal = 0.05
+
+[backend]
+backend = "numpy"
+
+[forcing]
+use_forcing = true
+n_min_force = 1.0
+n_max_force = 3.0
+alpha_force = 0.0
+forcing_seed = 1234
+
+[forcing.force_amplitudes]
+psi = 0.03
+omega = 0.03
+
+[initial_condition]
+type = "zero"
+
+[runtime]
+progress_output_every = 10
+
+[dissipation.psi]
+nu_perp = 0.005
+nu_par = 0.0
+n_perp = 3
+n_par = 3
+
+[dissipation.omega]
+nu_perp = 0.005
+nu_par = 0.0
+n_perp = 3
+n_par = 3

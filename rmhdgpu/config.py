@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import numpy as np
@@ -247,3 +247,18 @@ class Config:
             cleaned_dissipation[field_name] = entry
 
         self.dissipation = cleaned_dissipation
+
+
+def config_to_dict(config: Config) -> dict[str, Any]:
+    """Return a deep-copied plain-Python representation of a `Config`."""
+
+    data = asdict(config)
+    data["real_dtype"] = str(np.dtype(config.real_dtype))
+    data["complex_dtype"] = str(np.dtype(config.complex_dtype))
+    return data
+
+
+def default_config_dict() -> dict[str, Any]:
+    """Return the fully resolved default configuration as a plain dict."""
+
+    return config_to_dict(Config())
