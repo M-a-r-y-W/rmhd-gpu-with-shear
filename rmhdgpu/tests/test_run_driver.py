@@ -5,7 +5,7 @@ from pathlib import Path
 from rmhdgpu.run import main
 
 
-def _write_small_runfile(path: Path, *, output_dir_line: str | None = None) -> None:
+def _write_small_input_file(path: Path, *, output_dir_line: str | None = None) -> None:
     lines = [
         'title = "Tiny test"',
     ]
@@ -38,17 +38,17 @@ def _write_small_runfile(path: Path, *, output_dir_line: str | None = None) -> N
 def test_resolved_config_written(tmp_path) -> None:
     case_dir = tmp_path / "case"
     case_dir.mkdir()
-    runfile = case_dir / "input.run"
-    _write_small_runfile(runfile, output_dir_line='output_dir = "outputs"')
+    input_file = case_dir / "input.input"
+    _write_small_input_file(input_file, output_dir_line='output_dir = "outputs"')
 
-    main([str(runfile)])
+    main([str(input_file)])
 
     output_dir = case_dir / "outputs"
     assert output_dir.exists()
     assert (output_dir / "resolved_config.toml").exists()
     assert (output_dir / "run.log").exists()
     assert (output_dir / "scalar_diagnostics.csv").exists()
-    assert (output_dir / "input_copy.run").exists()
+    assert (output_dir / "input_copy.input").exists()
 
 
 def test_output_dir_defaults_relative_to_input_file(tmp_path, monkeypatch) -> None:
@@ -56,11 +56,11 @@ def test_output_dir_defaults_relative_to_input_file(tmp_path, monkeypatch) -> No
     other_dir = tmp_path / "other"
     case_dir.mkdir()
     other_dir.mkdir()
-    runfile = case_dir / "input.run"
-    _write_small_runfile(runfile)
+    input_file = case_dir / "input.input"
+    _write_small_input_file(input_file)
 
     monkeypatch.chdir(other_dir)
-    main([str(runfile)])
+    main([str(input_file)])
 
     assert (case_dir / "outputs").exists()
     assert not (other_dir / "outputs" / "resolved_config.toml").exists()
@@ -70,15 +70,14 @@ def test_example_runfile_executes_small_case(tmp_path) -> None:
     source = (
         Path(__file__).resolve().parents[2]
         / "examples"
-        / "input_files"
-        / "forced_turbulence_small.run"
+        / "forced_turbulence.input"
     )
     case_dir = tmp_path / "example_case"
     case_dir.mkdir()
-    runfile = case_dir / "input.run"
-    runfile.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    input_file = case_dir / "input.input"
+    input_file.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
 
-    main([str(runfile), "--tmax", "0.02", "--nx", "8", "--ny", "8", "--nz", "8"])
+    main([str(input_file), "--tmax", "0.02", "--nx", "8", "--ny", "8", "--nz", "8"])
 
     output_dir = case_dir / "outputs"
     assert (output_dir / "resolved_config.toml").exists()

@@ -1,4 +1,4 @@
-"""Helpers for `.run` input files and resolved run settings."""
+"""Helpers for `.input` input files and resolved run settings."""
 
 from __future__ import annotations
 
@@ -6,14 +6,16 @@ import argparse
 import math
 import tomllib
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from rmhdgpu.config import Config, default_config_dict
 
 
-RUNFILE_SUFFIX = ".run"
+PRIMARY_INPUT_SUFFIX = ".input"
+LEGACY_INPUT_SUFFIX = ".run"
+ACCEPTED_INPUT_SUFFIXES = {PRIMARY_INPUT_SUFFIX, LEGACY_INPUT_SUFFIX}
 DEFAULT_OUTPUT_DIR_NAME = "outputs"
 
 _TOP_LEVEL_KEYS = {
@@ -45,7 +47,22 @@ _SECTION_KEYS = {
     "runtime": {"runtime_check_every", "progress_output_every", "fail_on_nonfinite", "dealias", "dealias_mode"},
     "physics": {"vA", "cs2_over_vA2"},
     "forcing": {"use_forcing", "n_min_force", "n_max_force", "alpha_force", "forcing_seed", "force_amplitudes"},
-    "initial_condition": {"type", "k_indices", "amplitude", "branch"},
+    "initial_condition": {
+        "type",
+        "k_indices",
+        "amplitude",
+        "branch",
+        "phi_seed",
+        "phi_amplitude",
+        "psi_seed",
+        "psi_amplitude",
+        "upar_seed",
+        "upar_amplitude",
+        "dbpar_seed",
+        "dbpar_amplitude",
+        "s_seed",
+        "s_amplitude",
+    },
 }
 _SECTION_TO_CONFIG_KEYS = {
     "grid": {"Nx", "Ny", "Nz", "Lx", "Ly", "Lz"},
@@ -65,11 +82,12 @@ class InitialConditionSpec:
     k_indices: tuple[int, int, int] = (1, 1, 1)
     amplitude: float = 1.0
     branch: str = "plus"
+    parameters: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_document(cls, data: dict[str, Any] | None) -> "InitialConditionSpec":
         if data is None:
-            return cls()
+            return cls(parameters={})
         if not isinstance(data, dict):
             raise ValueError("initial_condition must be a TOML table.")
 
@@ -84,41 +102,65 @@ class InitialConditionSpec:
         k_indices = tuple(int(value) for value in raw_k)
         amplitude = float(data.get("amplitude", 1.0))
         branch = str(data.get("branch", "plus"))
+        parameters = {
+            key: value
+            for key, value in data.items()
+            if key
+            not in {
+                "type",
+                "k_indices",
+                "amplitude",
+                "branch",
+            }
+        }
 
-        spec = cls(type=kind, k_indices=k_indices, amplitude=amplitude, branch=branch)
+        spec = cls(type=kind, k_indices=k_indices, amplitude=amplitude, branch=branch, parameters=parameters)
         spec.validate()
         return spec
 
     def validate(self) -> None:
-        if self.type not in {"alfven_mode", "zero"}:
+        if self.parameters is None:
+            self.parameters = {}
+        if self.type not in {"alfven_mode", "zero", "aw_packet", "decaying_low_modes"}:
             raise ValueError(
-                f"initial_condition.type must be 'alfven_mode' or 'zero'; got {self.type!r}."
+                "initial_condition.type must be 'alfven_mode', 'zero', 'aw_packet', or "
+                f"'decaying_low_modes'; got {self.type!r}."
             )
-        if len(self.k_indices) != 3:
-            raise ValueError("initial_condition.k_indices must contain exactly three entries.")
-        for index, value in enumerate(self.k_indices):
-            if not isinstance(value, int):
+        if self.type == "alfven_mode":
+            if len(self.k_indices) != 3:
+                raise ValueError("initial_condition.k_indices must contain exactly three entries.")
+            for index, value in enumerate(self.k_indices):
+                if not isinstance(value, int):
+                    raise ValueError(
+                        f"initial_condition.k_indices[{index}] must be an integer; got {value!r}."
+                    )
+                if value < 0:
+                    raise ValueError(
+                        f"initial_condition.k_indices[{index}] must be nonnegative; got {value!r}."
+                    )
+            if self.amplitude <= 0.0:
+                raise ValueError(f"initial_condition.amplitude must be positive; got {self.amplitude!r}.")
+            if self.branch not in {"plus", "minus"}:
                 raise ValueError(
-                    f"initial_condition.k_indices[{index}] must be an integer; got {value!r}."
+                    f"initial_condition.branch must be 'plus' or 'minus'; got {self.branch!r}."
                 )
-            if value < 0:
-                raise ValueError(
-                    f"initial_condition.k_indices[{index}] must be nonnegative; got {value!r}."
-                )
-        if self.amplitude <= 0.0:
-            raise ValueError(f"initial_condition.amplitude must be positive; got {self.amplitude!r}.")
-        if self.branch not in {"plus", "minus"}:
-            raise ValueError(
-                f"initial_condition.branch must be 'plus' or 'minus'; got {self.branch!r}."
-            )
+        if self.type == "decaying_low_modes":
+            for key, value in self.parameters.items():
+                if key.endswith("_seed"):
+                    int(value)
+                if key.endswith("_amplitude") and float(value) <= 0.0:
+                    raise ValueError(f"initial_condition.{key} must be positive; got {value!r}.")
 
     def to_document(self) -> dict[str, Any]:
-        return {
+        document = {
             "type": self.type,
-            "k_indices": list(self.k_indices),
-            "amplitude": self.amplitude,
-            "branch": self.branch,
         }
+        if self.type == "alfven_mode":
+            document["k_indices"] = list(self.k_indices)
+            document["amplitude"] = self.amplitude
+            document["branch"] = self.branch
+        document.update(dict(self.parameters))
+        return document
 
 
 @dataclass(slots=True)
@@ -154,16 +196,20 @@ def _require_table(data: dict[str, Any], section: str) -> dict[str, Any]:
 
 
 def load_run_file(path: str | Path) -> dict[str, Any]:
-    """Load a `.run` file using TOML syntax."""
+    """Load a `.input` file using TOML syntax."""
 
     runfile_path = Path(path).expanduser().resolve()
-    if runfile_path.suffix != RUNFILE_SUFFIX:
-        raise ValueError(f"Run input files must end with {RUNFILE_SUFFIX!r}; got {runfile_path.name!r}.")
+    if runfile_path.suffix not in ACCEPTED_INPUT_SUFFIXES:
+        raise ValueError(
+            "Run input files must end with "
+            f"{PRIMARY_INPUT_SUFFIX!r} (legacy {LEGACY_INPUT_SUFFIX!r} is also accepted); "
+            f"got {runfile_path.name!r}."
+        )
     try:
         with runfile_path.open("rb") as handle:
             data = tomllib.load(handle)
     except tomllib.TOMLDecodeError as exc:
-        raise ValueError(f"Could not parse TOML run file {runfile_path}: {exc}.") from exc
+        raise ValueError(f"Could not parse TOML input file {runfile_path}: {exc}.") from exc
     except FileNotFoundError as exc:
         raise ValueError(f"Run input file not found: {runfile_path}.") from exc
 

@@ -1,4 +1,4 @@
-"""Main simulation driver for CLI and `.run` (TOML) workflows."""
+"""Main simulation driver for CLI and `.input` (TOML) workflows."""
 
 from __future__ import annotations
 
@@ -18,14 +18,20 @@ from rmhdgpu.backend import build_backend
 from rmhdgpu.diagnostics.alfvenic import alfvenic_cross_helicity, alfvenic_energy
 from rmhdgpu.diagnostics.scalar import compute_energy_diagnostics, compute_scalar_diagnostics
 from rmhdgpu.errors import NonFiniteStateError
+from rmhdgpu.example_setups import build_initial_state
 from rmhdgpu.equations import s09
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.forcing import apply_forcing_kick, generate_forcing_kick
 from rmhdgpu.grid import build_grid
-from rmhdgpu.initconds.eigenmodes import alfven_mode_state
 from rmhdgpu.masks import build_dealias_mask
-from rmhdgpu.runfile import RUNFILE_SUFFIX, RunSettings, cli_overrides_from_args, resolve_run_settings, write_resolved_config
-from rmhdgpu.state import State
+from rmhdgpu.runfile import (
+    LEGACY_INPUT_SUFFIX,
+    PRIMARY_INPUT_SUFFIX,
+    RunSettings,
+    cli_overrides_from_args,
+    resolve_run_settings,
+    write_resolved_config,
+)
 from rmhdgpu.steppers import compute_cfl_timestep, if_ssprk3_step
 from rmhdgpu.utils import check_state_finite
 from rmhdgpu.workspace import Workspace
@@ -58,10 +64,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "runfile",
+        "input_file",
         nargs="?",
         default=None,
-        help=f"Optional {RUNFILE_SUFFIX} input file. These files use TOML syntax internally.",
+        help=(
+            f"Optional {PRIMARY_INPUT_SUFFIX} input file. These files use TOML syntax internally. "
+            f"Legacy {LEGACY_INPUT_SUFFIX} files are also accepted."
+        ),
     )
     parser.add_argument("--title", default=argparse.SUPPRESS)
     parser.add_argument("--output-dir", default=argparse.SUPPRESS)
@@ -144,22 +153,7 @@ def _open_run_logger(output_dir: Path) -> _RunLogger:
 def _write_input_copy(settings: RunSettings, output_dir: Path) -> None:
     if settings.input_file is None:
         return
-    shutil.copyfile(settings.input_file, output_dir / "input_copy.run")
-
-
-def _build_initial_state(settings: RunSettings, *, grid: Any, backend: Any) -> State:
-    spec = settings.initial_condition
-    if spec.type == "zero":
-        return State(grid, backend, field_names=settings.config.field_names)
-    return alfven_mode_state(
-        grid=grid,
-        backend=backend,
-        field_names=settings.config.field_names,
-        k_indices=spec.k_indices,
-        amplitude=spec.amplitude,
-        branch=spec.branch,
-        params=settings.config,
-    )
+    shutil.copyfile(settings.input_file, output_dir / "input_copy.input")
 
 
 def _startup_metadata(settings: RunSettings, output_dir: Path) -> dict[str, Any]:
@@ -239,7 +233,15 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
         mask = build_dealias_mask(grid, backend, mode=config.dealias_mode) if config.dealias else None
         workspace = Workspace(grid, backend)
         linear_ops = s09.build_dissipation_operators(grid, config)
-        state = _build_initial_state(settings, grid=grid, backend=backend)
+        state = build_initial_state(
+            settings.initial_condition,
+            grid=grid,
+            backend=backend,
+            fft=fft,
+            dealias_mask=mask,
+            field_names=settings.config.field_names,
+            params=settings.config,
+        )
 
         energy_initial = alfvenic_energy(state, grid, fft)
         cross_initial = alfvenic_cross_helicity(state, grid, fft)
@@ -355,19 +357,20 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Resolve CLI or `.run` input and execute one simulation."""
+    """Resolve CLI or `.input` input and execute one simulation."""
 
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.runfile is not None and not str(args.runfile).endswith(RUNFILE_SUFFIX):
+    if args.input_file is not None and not str(args.input_file).endswith((PRIMARY_INPUT_SUFFIX, LEGACY_INPUT_SUFFIX)):
         raise SystemExit(
-            f"Expected an optional {RUNFILE_SUFFIX} input file as the first positional argument; "
-            f"got {args.runfile!r}."
+            "Expected an optional input file with suffix "
+            f"{PRIMARY_INPUT_SUFFIX!r} (legacy {LEGACY_INPUT_SUFFIX!r} is also accepted) "
+            f"as the first positional argument; got {args.input_file!r}."
         )
 
     try:
         settings = resolve_run_settings(
-            runfile_path=args.runfile,
+            runfile_path=args.input_file,
             cli_overrides=cli_overrides_from_args(args),
         )
     except ValueError as exc:

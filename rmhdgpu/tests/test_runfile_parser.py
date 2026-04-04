@@ -7,10 +7,10 @@ from rmhdgpu.runfile import cli_overrides_from_args, load_run_file, resolve_run_
 
 
 def test_minimal_runfile_parses(tmp_path) -> None:
-    runfile = tmp_path / "minimal.run"
-    runfile.write_text('title = "Minimal case"\n', encoding="utf-8")
+    input_file = tmp_path / "minimal.input"
+    input_file.write_text('title = "Minimal case"\n', encoding="utf-8")
 
-    settings = resolve_run_settings(runfile_path=runfile)
+    settings = resolve_run_settings(runfile_path=input_file)
 
     assert settings.title == "Minimal case"
     assert settings.config.Nx == 16
@@ -20,8 +20,8 @@ def test_minimal_runfile_parses(tmp_path) -> None:
 
 
 def test_nested_sections_parse_correctly(tmp_path) -> None:
-    runfile = tmp_path / "nested.run"
-    runfile.write_text(
+    input_file = tmp_path / "nested.input"
+    input_file.write_text(
         """
 title = "Nested case"
 output_dir = "case_outputs"
@@ -57,7 +57,7 @@ n_par = 1
         encoding="utf-8",
     )
 
-    settings = resolve_run_settings(runfile_path=runfile)
+    settings = resolve_run_settings(runfile_path=input_file)
 
     assert settings.config.Nx == 32
     assert settings.config.Ny == 16
@@ -74,16 +74,16 @@ n_par = 1
 
 
 def test_invalid_runfile_gives_helpful_error(tmp_path) -> None:
-    runfile = tmp_path / "bad.run"
-    runfile.write_text("[grid]\nNx = [1, 2\n", encoding="utf-8")
+    input_file = tmp_path / "bad.input"
+    input_file.write_text("[grid]\nNx = [1, 2\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="Could not parse TOML run file"):
-        load_run_file(runfile)
+    with pytest.raises(ValueError, match="Could not parse TOML input file"):
+        load_run_file(input_file)
 
 
 def test_cli_overrides_runfile(tmp_path) -> None:
-    runfile = tmp_path / "override.run"
-    runfile.write_text(
+    input_file = tmp_path / "override.input"
+    input_file.write_text(
         """
 [grid]
 Nx = 16
@@ -100,9 +100,9 @@ backend = "numpy"
         encoding="utf-8",
     )
 
-    args = build_parser().parse_args([str(runfile), "--backend", "cupy", "--tmax", "10.0"])
+    args = build_parser().parse_args([str(input_file), "--backend", "cupy", "--tmax", "10.0"])
     settings = resolve_run_settings(
-        runfile_path=args.runfile,
+        runfile_path=args.input_file,
         cli_overrides=cli_overrides_from_args(args),
     )
 
@@ -111,8 +111,8 @@ backend = "numpy"
 
 
 def test_runfile_without_cli_matches_expected_config(tmp_path) -> None:
-    runfile = tmp_path / "forcing.run"
-    runfile.write_text(
+    input_file = tmp_path / "forcing.input"
+    input_file.write_text(
         """
 [grid]
 Nx = 8
@@ -134,7 +134,7 @@ type = "zero"
         encoding="utf-8",
     )
 
-    settings = resolve_run_settings(runfile_path=runfile)
+    settings = resolve_run_settings(runfile_path=input_file)
 
     assert settings.config.use_forcing is True
     assert settings.config.forcing_seed == 22

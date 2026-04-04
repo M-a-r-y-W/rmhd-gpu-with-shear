@@ -1,5 +1,10 @@
 """Qualitative decaying-turbulence spectra sanity check.
 
+This is a lightweight self-contained sanity script, not the recommended
+workflow for normal runs. For case-style usage, prefer
+`python -m rmhdgpu.run examples/decay_spectra.input` and
+`python vis/decay_spectra.py examples/decay_spectra.input`.
+
 Run with:
 
 `python -m rmhdgpu.examples.sanity_decay_spectra`

@@ -1,3 +1,13 @@
+Metadata-Version: 2.4
+Name: rmhdgpu
+Version: 0.1.0
+Summary: Foundation for a single-GPU Fourier pseudo-spectral RMHD-style code.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: numpy>=1.24
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4; extra == "dev"
+
 # rmhdgpu
 
 `rmhdgpu` is a single-node Fourier pseudo-spectral RMHD-style solver with three backend modes:
@@ -20,43 +30,35 @@ Current solver scope includes:
 
 `rmhdgpu` now supports two normal run modes:
 
-- input-file mode: `python -m rmhdgpu.run filename.input`
+- input-file mode: `python -m rmhdgpu.run filename.run`
 - CLI-only mode: `python -m rmhdgpu.run --options ...`
 
-You can also combine them, with command-line arguments overriding the `.input` file:
+You can also combine them, with command-line arguments overriding the `.run` file:
 
 ```bash
-python -m rmhdgpu.run cases/my_forced_case/input.input
-python -m rmhdgpu.run cases/my_forced_case/input.input --tmax 20.0
+python -m rmhdgpu.run cases/my_forced_case/input.run
+python -m rmhdgpu.run cases/my_forced_case/input.run --tmax 20.0
 python -m rmhdgpu.run --backend numpy --nx 64 --tmax 0.1
 ```
 
-For real runs, the recommended workflow is a case directory with a `.input` file and an `outputs/` directory written by the driver:
+For real runs, the recommended workflow is a case directory with a `.run` file and an `outputs/` directory written by the driver:
 
 ```text
 my_case/
-    input.input
+    input.run
     outputs/
         resolved_config.toml
         run.log
         scalar_diagnostics.csv
 ```
 
-`.input` files use TOML syntax internally. They are meant to be copied, edited, and versioned per case.
+`.run` files keep the `.run` extension but use TOML syntax internally. They are meant to be copied, edited, and versioned per case.
 
-If `output_dir` is omitted in a `.input` file, the driver uses `outputs` relative to the input-file location. In CLI-only mode, the default is `./outputs` relative to the current working directory.
+If `output_dir` is omitted in a `.run` file, the driver uses `outputs` relative to the input-file location. In CLI-only mode, the default is `./outputs` relative to the current working directory.
 
-If you install the package in editable mode from the repository root,
+## `.run` File Format
 
-```bash
-python -m pip install -e .
-```
-
-then `python -m rmhdgpu.run ...` works from any folder, not just from inside the repository checkout. That is the most convenient setup for cluster usage and for keeping separate case directories elsewhere.
-
-## `.input` File Format
-
-The driver accepts TOML-based `.input` files with sections such as:
+The driver accepts TOML-based `.run` files with sections such as:
 
 ```toml
 title = "Small forced turbulence test"
@@ -111,25 +113,6 @@ The currently supported initial conditions are:
 
 - `type = "alfven_mode"` with `k_indices = [kx, ky, kz]`, `amplitude`, and `branch = "plus"` or `"minus"`
 - `type = "zero"`
-- `type = "aw_packet"` for the nonlinear Alfvén-wave packet example
-- `type = "decaying_low_modes"` for the low-mode decaying-turbulence example
-
-## Example Cases
-
-The repository root now includes ready-to-run example inputs:
-
-- [`examples/aw_packet.input`](/Users/squjo23p/Otago%20University%20Dropbox/Jonathan%20Squire/Research/KRMHD/rmhd-gpu/examples/aw_packet.input)
-- [`examples/decay_spectra.input`](/Users/squjo23p/Otago%20University%20Dropbox/Jonathan%20Squire/Research/KRMHD/rmhd-gpu/examples/decay_spectra.input)
-- [`examples/decay_spectra_gpu.input`](/Users/squjo23p/Otago%20University%20Dropbox/Jonathan%20Squire/Research/KRMHD/rmhd-gpu/examples/decay_spectra_gpu.input)
-- [`examples/forced_turbulence.input`](/Users/squjo23p/Otago%20University%20Dropbox/Jonathan%20Squire/Research/KRMHD/rmhd-gpu/examples/forced_turbulence.input)
-
-The qualitative plots that used to live only in the `sanity_*` scripts now also have matching visualization scripts in the root [`vis/`](/Users/squjo23p/Otago%20University%20Dropbox/Jonathan%20Squire/Research/KRMHD/rmhd-gpu/vis) folder:
-
-```bash
-python vis/aw_packet.py examples/aw_packet.input
-python vis/decay_spectra.py examples/decay_spectra.input
-python vis/forced_turbulence.py examples/forced_turbulence.input
-```
 
 ## Backend Notes
 
@@ -151,27 +134,25 @@ GPU-focused tests skip cleanly when CuPy is unavailable or when a usable CUDA de
 
 ## Running the code
 
-The normal driver is [`rmhdgpu/run.py`](/Users/squjo23p/Otago%20University%20Dropbox/Jonathan%20Squire/Research/KRMHD/rmhd-gpu/rmhdgpu/run.py), and the recommended workflow is now to run a commented `.input` file from a case directory:
+The main script to run the code is `run.py`. This can be edited to change options or features (this will be updated to read a run file). 
 
-```bash
-python -m rmhdgpu.run examples/decay_spectra.input
-python -m rmhdgpu.run examples/forced_turbulence.input --tmax 1.0 --backend cupy
+From inside the main folder (where `Readme.md` lives):
+
+```
+python -m rmhdgpu.run --options
 ```
 
-CLI-only mode is still supported for quick tests:
+There are a few of example scripts, modelled on `run.py`, that can act as qualitative checks that everything is working (see `examples` folder). For example, a decaying turbulence test (from random, large-scale noise):
 
-```bash
-python -m rmhdgpu.run --backend numpy --nx 32 --ny 32 --nz 32 --tmax 0.05
+```
+python -m rmhdgpu.examples.sanity_decay_spectra 
+```
+or on a GPU at 384^3, saving 20 frames to make a movie:
+```
+python -m rmhdgpu.examples.sanity_decay_spectra --t-final 8.0 --n 384 --backend cupy --save-frames --frame-count 20
 ```
 
-The `sanity_*` scripts in [`rmhdgpu/examples/`](/Users/squjo23p/Otago%20University%20Dropbox/Jonathan%20Squire/Research/KRMHD/rmhd-gpu/rmhdgpu/examples) are still kept as lightweight self-contained checks, but they are not the recommended way to set up normal runs. The matching plotting scripts in [`vis/`](/Users/squjo23p/Otago%20University%20Dropbox/Jonathan%20Squire/Research/KRMHD/rmhd-gpu/vis) reproduce the same qualitative diagnostics starting from a normal `.input` file:
-
-```bash
-python vis/decay_spectra.py examples/decay_spectra.input
-python vis/forced_turbulence.py examples/forced_turbulence.input
-```
-
-You can use `-h` on the driver, tests, examples, and visualisation scripts to list available options.
+You can use `-h` on tests and examples to return a list of the options available. 
 
 ## Profiling
 
@@ -220,8 +201,6 @@ conda create -y -p ~/conda-envs/curmpy python=3.11
 conda activate ~/conda-envs/curmpy
 python -m pip install --upgrade pip
 python -m pip install numpy scipy matplotlib pytest cupy
-cd ~/path/to/rmhd-gpu
-python -m pip install -e .
 ```
 
 Then check that the environment is actually providing the Python interpreter:
@@ -278,7 +257,7 @@ module purge
 module load cuda
 source ~/.bashrc
 conda activate ~/conda-envs/curmpy
-cd ~/path/to/rmhd-gpu
+cd ~/path/to/cuRMpy
 ```
 
 If you use the helper script, the middle part becomes:
@@ -293,11 +272,11 @@ Once the environment is active, you can run tests or examples as usual. For exam
 
 ```
 mkdir -p cases/my_forced_case
-cp examples/forced_turbulence.input cases/my_forced_case/input.input
+cp examples/input_files/forced_turbulence_small.run cases/my_forced_case/input.run
 python -m pytest rmhdgpu/tests/test_cupy_backend.py rmhdgpu/tests/test_gpu_consistency.py
-python -m rmhdgpu.run cases/my_forced_case/input.input --backend cupy --tmax 1.0
+python -m rmhdgpu.run cases/my_forced_case/input.run --backend cupy --tmax 1.0
 ```
-Or as a quick sanity check
+Or as a quick test
 ```
 python -m rmhdgpu.examples.sanity_decay_spectra --gpu-256
 ```
@@ -325,7 +304,7 @@ conda activate ~/conda-envs/curmpy
 cd ~/path/to/rmhd-gpu
 
 python -m pytest rmhdgpu/tests/test_cupy_backend.py rmhdgpu/tests/test_gpu_consistency.py
-python -m rmhdgpu.run cases/my_forced_case/input.input --backend cupy --tmax 1.0
+python -m rmhdgpu.run cases/my_forced_case/input.run --backend cupy --tmax 1.0
 ```
 
 Submit it with: `sbatch run_rmhdgpu.slurm`

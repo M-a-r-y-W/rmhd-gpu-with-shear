@@ -1,0 +1,80 @@
+# `.input` files use TOML syntax.
+#
+# This reproduces the old `sanity_decay_spectra` setup as a normal case input.
+# The built-in `decaying_low_modes` initializer creates the same low-mode
+# random fields that the old script used for phi, psi, upar, dbpar, and s.
+#
+# Use:
+#   python -m rmhdgpu.run examples/decay_spectra.input
+#   python vis/decay_spectra.py examples/decay_spectra.input
+
+title = "Qualitative decaying turbulence spectra"
+output_dir = "outputs"
+
+[grid]
+Nx = 128
+Ny = 128
+Nz = 128
+
+[time]
+tmax = 4.0
+dt_max = 2.0e-2
+cfl_number = 0.5
+t_out_scal = 0.4
+
+[backend]
+backend = "scipy_cpu"
+fft_workers = 8
+
+[initial_condition]
+type = "decaying_low_modes"
+
+# The original sanity script estimated the perpendicular hyperdiffusion
+# coefficient from a nominal dissipation scale
+#
+#   k_d = 0.5 * k_perp,max,dealiased
+#
+# and the heuristic balance
+#
+#   tau_nl^{-1}(k_d) ~ nu_perp * k_d^(2 n_perp)
+#
+# with n_perp = 3. The parallel coefficient was then set to
+#
+#   nu_par = 0.1 * nu_perp
+#
+# so the damping acts near the top of the retained perpendicular range,
+# but still more weakly in the parallel direction.
+#
+# For this 128^3 setup that gave:
+#   nu_perp = 1.2977767829696784e-08
+#   nu_par  = 1.2977767829696785e-09
+
+[dissipation.psi]
+nu_perp = 1.2977767829696784e-08
+nu_par = 1.2977767829696785e-09
+n_perp = 3
+n_par = 1
+
+[dissipation.omega]
+nu_perp = 1.2977767829696784e-08
+nu_par = 1.2977767829696785e-09
+n_perp = 3
+n_par = 1
+
+[dissipation.upar]
+nu_perp = 1.2977767829696784e-08
+nu_par = 1.2977767829696785e-09
+n_perp = 3
+n_par = 1
+
+[dissipation.dbpar]
+nu_perp = 1.2977767829696784e-08
+nu_par = 1.2977767829696785e-09
+n_perp = 3
+n_par = 1
+
+[dissipation.s]
+nu_perp = 1.2977767829696784e-08
+nu_par = 1.2977767829696785e-09
+n_perp = 3
+n_par = 1

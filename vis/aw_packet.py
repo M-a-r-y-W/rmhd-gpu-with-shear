@@ -1,23 +1,13 @@
-"""Qualitative sanity check for nonlinear exact Alfvén-wave propagation.
-
-This is a lightweight self-contained sanity script, not the recommended
-workflow for normal runs. For case-style usage, prefer
-`python -m rmhdgpu.run examples/aw_packet.input` and
-`python vis/aw_packet.py examples/aw_packet.input`.
-
-Run with:
-
-`python -m rmhdgpu.examples.sanity_aw_packet`
-
-The script builds a large-amplitude `phi = psi` Alfvénic packet from the first
-three Fourier modes in each direction, advances it ideally, and overplots a
-fixed `(x, y)` slice at times spaced by `0.1` Alfvén times.
-"""
+"""Plot the Alfvén-wave packet profile for a `.input` case."""
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import sys
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import matplotlib
 
@@ -26,8 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from rmhdgpu.backend import build_backend
-from rmhdgpu.config import Config
-from rmhdgpu.equations import s09
+from rmhdgpu.example_setups import build_initial_state
 from rmhdgpu.examples.frame_output import (
     add_frame_arguments,
     build_frame_times,
@@ -38,64 +27,58 @@ from rmhdgpu.examples.frame_output import (
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
 from rmhdgpu.masks import build_dealias_mask
-from rmhdgpu.operators import lap_perp
-from rmhdgpu.state import State
+from rmhdgpu.runfile import resolve_run_settings
 from rmhdgpu.steppers import if_ssprk3_step
 from rmhdgpu.workspace import Workspace
+from rmhdgpu.equations import s09
 
 
-def _packet_real_field(grid: object, backend: object) -> object:
-    xp = backend.xp
-    x = grid.x.reshape(grid.Nx, 1, 1)
-    y = grid.y.reshape(1, grid.Ny, 1)
-    z = grid.z.reshape(1, 1, grid.Nz)
-    field = xp.zeros(grid.real_shape, dtype=grid.real_dtype)
-
-    for nx in range(1, 4):
-        for ny in range(1, 4):
-            for nz in range(1, 4):
-                coefficient = 0.15 / (nx + ny + nz - 1.0)
-                phase = 0.3 * (nx - ny + nz)
-                field += coefficient * xp.cos(nx * x + ny * y + nz * z + phase)
-
-    rms = backend.scalar_to_float(xp.sqrt(xp.mean(field**2)))
-    field *= 1.0 / rms
-    return field
+def _resolve_output_dir(settings: object, requested: str | None) -> Path:
+    if requested is None:
+        return settings.output_dir
+    output_dir = Path(requested).expanduser()
+    if output_dir.is_absolute():
+        return output_dir
+    base = settings.input_file.parent if settings.input_file is not None else Path.cwd()
+    return (base / output_dir).resolve()
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-dir", default="sanity_plots", help="Directory where figures are written.")
-    parser.add_argument("--nx", type=int, default=32, help="Grid resolution in each direction.")
+    parser.add_argument("input_file", help="Path to a TOML-based .input file.")
+    parser.add_argument("--output-dir", default=None, help="Directory where figures are written.")
     add_frame_arguments(parser)
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
-
-    output_dir = Path(args.output_dir)
+    settings = resolve_run_settings(runfile_path=args.input_file)
+    output_dir = _resolve_output_dir(settings, args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    config = Config(Nx=args.nx, Ny=args.nx, Nz=args.nx, backend="numpy", use_variable_dt=False, dt_init=0.07e-2)
+    config = settings.config
     backend = build_backend(config)
     grid = build_grid(config, backend)
     fft = FFTManager(grid, backend)
     workspace = Workspace(grid, backend)
     mask = build_dealias_mask(grid, backend)
     linear_ops = s09.build_dissipation_operators(grid, config)
+    state = build_initial_state(
+        settings.initial_condition,
+        grid=grid,
+        backend=backend,
+        fft=fft,
+        dealias_mask=mask,
+        field_names=config.field_names,
+        params=config,
+    )
     z_index = resolve_snapshot_z_index(grid, args.snapshot_z_index)
 
-    phi_real = _packet_real_field(grid, backend)
-    phi_hat = fft.r2c(phi_real) * mask
-
-    state = State(grid, backend, field_names=config.field_names)
-    state["psi"][...] = phi_hat
-    state["omega"][...] = lap_perp(phi_hat, grid)
-
     tau_A = grid.Lz / config.vA
-    sample_times = np.arange(0.0, 0.51 * tau_A, 0.1 * tau_A)
-    frame_times = build_frame_times(sample_times[-1], args.frame_count) if args.save_frames else np.empty(0, dtype=np.float64)
+    t_stop = min(config.tmax, 0.5 * tau_A)
+    sample_times = np.arange(0.0, t_stop + 1.0e-15, 0.1 * tau_A)
+    frame_times = build_frame_times(float(t_stop), args.frame_count) if args.save_frames else np.empty(0, dtype=np.float64)
     samples: list[tuple[float, np.ndarray]] = []
     frame_records: list[dict[str, object]] = []
     slice_x = grid.Nx // 3
@@ -151,7 +134,7 @@ def main() -> None:
     ax.grid(True, alpha=0.3)
     ax.legend(ncol=2, fontsize=8)
 
-    figure_path = output_dir / "sanity_aw_packet.png"
+    figure_path = output_dir / "aw_packet_profile.png"
     fig.savefig(figure_path, dpi=160)
     print(f"Saved {figure_path}")
     write_signed_xy_frames(frame_records, output_dir=output_dir, grid=grid, z_index=z_index)
