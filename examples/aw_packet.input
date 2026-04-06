@@ -7,7 +7,8 @@
 #
 # Use:
 #   python -m rmhdgpu.run examples/aw_packet.input
-#   python vis/aw_packet.py examples/aw_packet.input
+#   python vis/plot_scalars.py examples/outputs/scalar_diagnostics.csv
+#   python vis/plot_fullfield.py examples/outputs/fullfields --field psi --slice-dir z
 
 title = "Qualitative Alfvén-wave packet translation"
 output_dir = "outputs"

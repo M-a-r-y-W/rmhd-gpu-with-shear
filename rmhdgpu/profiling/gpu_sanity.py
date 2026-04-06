@@ -109,7 +109,7 @@ def _short_run(backend_name: str, nx: int, steps: int, dt: float) -> tuple[dict[
         fixed_dt=dt,
     )
     diagnostics = compute_scalar_diagnostics(final_state, grid, fft, backend, workspace=workspace)
-    diagnostics.update(compute_energy_diagnostics(final_state, grid, fft, backend, workspace=workspace))
+    diagnostics.update(compute_energy_diagnostics(final_state, grid, fft, backend, config, workspace=workspace))
     return diagnostics, final_state
 
 

@@ -10,6 +10,7 @@ Current solver scope includes:
 
 - ideal homogeneous S09 equations
 - anisotropic dissipation with integrating-factor time stepping
+- optional auto-dissipation with one common adaptive perpendicular coefficient
 - variable timestep support
 - stochastic forcing
 - persistent scalar, spectral, and full-field diagnostics
@@ -76,9 +77,31 @@ Cadences are in simulation time units:
 
 Outputs are:
 
-- `scalar_diagnostics.csv`: one row per output time, with `time`, `step`, and scalar quantities
+- `scalar_diagnostics.csv`: one row per output time, with `time`, `step`, scalar quantities, and saved budget terms
 - `spectra.csv`: tidy/long CSV with columns `time`, `step`, `quantity`, `kperp`, `value`
 - `fullfields/fullfield_0001.h5`, `fullfield_0002.h5`, ...: one HDF5 snapshot per output time
+
+The scalar CSV also carries saved conserved-quantity budget columns. For the
+current total-energy budget these include:
+
+- `total_energy`: the conserved quadratic energy used for the budget check
+- `total_energy_rhs_dissipation`: signed contribution to `d_t E` from dissipation, so it is negative when energy is removed
+- `total_energy_rhs_forcing`: signed contribution to `d_t E` from forcing, based on the actual kick-induced energy change over the preceding scalar-output interval
+- `total_energy_rhs_total`: sum of the saved signed RHS terms
+
+The sign convention is:
+
+- `d_t E = total_energy_rhs_total`
+- individual RHS terms are stored with their physical sign
+
+If auto dissipation is enabled, the scalar CSV also includes:
+
+- `auto_dissipation_enabled`
+- `auto_dissipation_nu_perp`
+- `auto_dissipation_nu_par`
+- `auto_dissipation_kd`
+- `auto_dissipation_ud`
+- `auto_dissipation_Ed`
 
 The full-field snapshots are self-contained. Each file stores:
 
@@ -143,8 +166,44 @@ Supported sections are:
 - `[runtime]`: `runtime_check_every`, `progress_output_every`, `fail_on_nonfinite`, `dealias`, `dealias_mode`
 - `[physics]`: `vA`, `cs2_over_vA2`
 - `[forcing]` and `[forcing.force_amplitudes]`
-- `[dissipation.<field>]`
+- `[dissipation]` for optional auto-dissipation control
+- `[dissipation.<field>]` for manual per-field dissipation
 - `[initial_condition]`
+
+Manual dissipation remains the default. In that mode, set per-field blocks such
+as `[dissipation.psi]` and `[dissipation.omega]` exactly as before.
+
+Auto dissipation is useful when you want one common hyperdissipation
+coefficient chosen automatically from the fluctuation amplitude near a target
+dissipation scale. In auto mode, the solver ignores per-field coefficients and
+applies one common `(nu_perp, nu_par, n_perp, n_par)` choice to all evolved
+fields.
+
+Practical auto-dissipation example:
+
+```toml
+[dissipation]
+mode = "auto"
+n_perp = 3
+n_par = 1
+nu_par = 0.0
+kd_fraction = 0.6
+shell_half_width = 0.5
+update_every = 10
+smooth_factor = 0.2
+nu_min = 1e-12
+nu_max = 1e-2
+max_update_factor = 2.0
+```
+
+Meaning of the main settings:
+
+- `mode = "auto"`: enable one common adaptive perpendicular coefficient for all fields
+- `kd_fraction`: choose `k_d` as this fraction of the maximum retained perpendicular wavenumber
+- `update_every`: recompute the coefficient every this many timesteps, not every step
+- `smooth_factor`: log-space smoothing strength; larger values react faster
+- `nu_par`: fixed common parallel coefficient used in auto mode
+- `n_perp`, `n_par`: common perpendicular and parallel hyper-orders used for every field
 
 Currently supported initial conditions are:
 
@@ -159,6 +218,7 @@ The repository root includes ready-to-run example inputs:
 
 - [`examples/aw_packet.input`](examples/aw_packet.input)
 - [`examples/decay_spectra.input`](examples/decay_spectra.input)
+- [`examples/decay_spectra_auto.input`](examples/decay_spectra_auto.input)
 - [`examples/decay_spectra_gpu.input`](examples/decay_spectra_gpu.input)
 - [`examples/forced_turbulence.input`](examples/forced_turbulence.input)
 
@@ -166,6 +226,7 @@ For example:
 
 ```bash
 python -m rmhdgpu.run examples/decay_spectra.input
+python -m rmhdgpu.run examples/decay_spectra_auto.input
 python -m rmhdgpu.run examples/decay_spectra_gpu.input
 ```
 
@@ -175,6 +236,7 @@ The generic post-processing scripts live under [`vis/`](vis):
 
 ```bash
 python vis/plot_scalars.py cases/my_case/outputs/scalar_diagnostics.csv
+python vis/plot_budget.py cases/my_case/outputs/scalar_diagnostics.csv
 python vis/plot_spectra.py cases/my_case/outputs/spectra.csv
 python vis/plot_fullfield.py cases/my_case/outputs/fullfields --field omega --slice-dir z
 ```
@@ -182,9 +244,17 @@ python vis/plot_fullfield.py cases/my_case/outputs/fullfields --field omega --sl
 Useful notes:
 
 - `plot_scalars.py` plots common energy-like quantities by default, or specific columns via `--columns`
+- `plot_budget.py` compares saved `Q(t)` and finite-difference `d_t Q` against saved `Q_rhs_*` terms for a conserved quantity such as `total_energy`
 - `plot_spectra.py` writes one log-log plot per quantity, colored by time
 - `plot_fullfield.py` accepts either a `fullfields/` directory or a single snapshot `.h5` file
 - most driver, plotting, profiling, and example scripts support `--help` to print available options
+
+Example budget check:
+
+```bash
+python -m rmhdgpu.run examples/decay_spectra.input --tmax 0.2
+python vis/plot_budget.py examples/outputs/scalar_diagnostics.csv
+```
 
 ## Tests and Profiling
 

@@ -40,6 +40,81 @@ def _normalize_output_cadence(name: str, value: float | int | None) -> float:
 
 
 @dataclass(slots=True)
+class AutoDissipationSettings:
+    """Controls the optional common auto-hyperdissipation mode.
+
+    In manual mode the existing per-field dissipation dictionary is used
+    unchanged. In auto mode, the perpendicular coefficient is adapted from a
+    shell-energy measurement near the chosen dissipation scale and then applied
+    uniformly to every evolved field.
+    """
+
+    mode: str = "manual"
+    n_perp: int = 3
+    n_par: int = 3
+    nu_par: float = 0.0
+    kd_fraction: float = 0.6
+    shell_half_width: float = 0.5
+    update_every: int = 10
+    smooth_factor: float = 0.2
+    nu_min: float = 1.0e-12
+    nu_max: float = 1.0e2
+    max_update_factor: float = 2.0
+
+    def __post_init__(self) -> None:
+        if self.mode not in {"manual", "auto"}:
+            raise ValueError(
+                f"auto_dissipation.mode must be 'manual' or 'auto'; got {self.mode!r}."
+            )
+
+        for name in ("n_perp", "n_par", "update_every"):
+            value = getattr(self, name)
+            if not isinstance(value, (int, np.integer)) or int(value) <= 0:
+                raise ValueError(f"auto_dissipation.{name} must be a positive integer; got {value!r}.")
+            setattr(self, name, int(value))
+
+        for name in ("nu_par", "kd_fraction", "shell_half_width", "smooth_factor", "nu_min", "nu_max"):
+            value = float(getattr(self, name))
+            if not np.isfinite(value):
+                raise ValueError(f"auto_dissipation.{name} must be finite; got {value!r}.")
+            setattr(self, name, value)
+
+        if self.nu_par < 0.0:
+            raise ValueError(f"auto_dissipation.nu_par must be nonnegative; got {self.nu_par!r}.")
+        if self.kd_fraction <= 0.0 or self.kd_fraction > 1.0:
+            raise ValueError(
+                f"auto_dissipation.kd_fraction must lie in (0, 1]; got {self.kd_fraction!r}."
+            )
+        if self.shell_half_width < 0.0:
+            raise ValueError(
+                f"auto_dissipation.shell_half_width must be nonnegative; got {self.shell_half_width!r}."
+            )
+        if self.smooth_factor < 0.0 or self.smooth_factor > 1.0:
+            raise ValueError(
+                f"auto_dissipation.smooth_factor must lie in [0, 1]; got {self.smooth_factor!r}."
+            )
+        if self.nu_min < 0.0:
+            raise ValueError(f"auto_dissipation.nu_min must be nonnegative; got {self.nu_min!r}.")
+        if self.nu_max <= 0.0:
+            raise ValueError(f"auto_dissipation.nu_max must be positive; got {self.nu_max!r}.")
+        if self.nu_min > self.nu_max:
+            raise ValueError(
+                f"auto_dissipation.nu_min must be <= nu_max; got nu_min={self.nu_min}, nu_max={self.nu_max}."
+            )
+
+        self.max_update_factor = float(self.max_update_factor)
+        if not np.isfinite(self.max_update_factor) or self.max_update_factor < 1.0:
+            raise ValueError(
+                "auto_dissipation.max_update_factor must be finite and >= 1.0; "
+                f"got {self.max_update_factor!r}."
+            )
+
+    @property
+    def enabled(self) -> bool:
+        return self.mode == "auto"
+
+
+@dataclass(slots=True)
 class Config:
     """Container for simulation-wide parameters.
 
@@ -83,6 +158,7 @@ class Config:
     forcing_seed: int | None = None
     field_names: list[str] = field(default_factory=lambda: list(DEFAULT_FIELD_NAMES))
     dissipation: dict[str, dict[str, float | int]] | None = None
+    auto_dissipation: AutoDissipationSettings | dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         for name in ("Nx", "Ny", "Nz"):
@@ -218,6 +294,16 @@ class Config:
             self.dissipation = _default_dissipation_for_fields(self.field_names)
         else:
             self.dissipation = deepcopy(self.dissipation)
+
+        if self.auto_dissipation is None:
+            self.auto_dissipation = AutoDissipationSettings()
+        elif isinstance(self.auto_dissipation, dict):
+            self.auto_dissipation = AutoDissipationSettings(**deepcopy(self.auto_dissipation))
+        elif not isinstance(self.auto_dissipation, AutoDissipationSettings):
+            raise ValueError(
+                "auto_dissipation must be an AutoDissipationSettings instance, a dict, or None; "
+                f"got {type(self.auto_dissipation).__name__}."
+            )
 
         dissipation_keys = set(self.dissipation)
         expected_keys = set(self.field_names)

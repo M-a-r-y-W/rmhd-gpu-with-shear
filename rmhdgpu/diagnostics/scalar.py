@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from rmhdgpu.diagnostics.alfvenic import alfvenic_energy
+from rmhdgpu.equations.s09 import total_energy as total_energy_s09
 
 
 def compute_scalar_diagnostics(
@@ -42,6 +43,7 @@ def compute_energy_diagnostics(
     grid: Any,
     fft: Any,
     backend: Any,
+    params: Any,
     workspace: Any | None = None,
 ) -> dict[str, float]:
     """Return a small set of quadratic energy-like diagnostics.
@@ -52,7 +54,9 @@ def compute_energy_diagnostics(
     - `upar_energy = 0.5 <upar^2>`
     - `dbpar_energy = 0.5 <dbpar^2>`
     - `entropy_variance = 0.5 <s^2>`
-    - `total_energy_proxy`, the sum of the above pieces
+    - `total_energy_proxy`, the simple unweighted sum of the above pieces
+    - `total_energy`, the conserved quadratic form of the current five-field
+      system, with the `upar` contribution weighted by `alpha / vA^2`
     """
 
     xp = backend.xp
@@ -78,4 +82,5 @@ def compute_energy_diagnostics(
         + diagnostics["dbpar_energy"]
         + diagnostics["entropy_variance"]
     )
+    diagnostics["total_energy"] = total_energy_s09(state, grid, backend, params)
     return diagnostics

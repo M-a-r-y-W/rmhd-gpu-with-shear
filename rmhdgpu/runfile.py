@@ -6,7 +6,7 @@ import argparse
 import math
 import tomllib
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +65,19 @@ _SECTION_KEYS = {
         "s_seed",
         "s_amplitude",
     },
+}
+_AUTO_DISSIPATION_KEYS = {
+    "mode",
+    "n_perp",
+    "n_par",
+    "nu_par",
+    "kd_fraction",
+    "shell_half_width",
+    "update_every",
+    "smooth_factor",
+    "nu_min",
+    "nu_max",
+    "max_update_factor",
 }
 _SECTION_TO_CONFIG_KEYS = {
     "grid": {"Nx", "Ny", "Nz", "Lx", "Ly", "Lz"},
@@ -242,7 +255,19 @@ def load_run_file(path: str | Path) -> dict[str, Any]:
     if dissipation is not None and not isinstance(dissipation, dict):
         raise ValueError("dissipation must be a TOML table.")
     if isinstance(dissipation, dict):
+        unexpected_scalar_keys = sorted(
+            key for key, value in dissipation.items() if not isinstance(value, dict) and key not in _AUTO_DISSIPATION_KEYS
+        )
+        if unexpected_scalar_keys:
+            raise ValueError(
+                "dissipation has unexpected scalar keys: "
+                f"{unexpected_scalar_keys}. Expected auto-mode keys are {sorted(_AUTO_DISSIPATION_KEYS)}."
+            )
         for field_name, entry in dissipation.items():
+            if isinstance(entry, dict):
+                continue
+            if field_name in _AUTO_DISSIPATION_KEYS:
+                continue
             if not isinstance(entry, dict):
                 raise ValueError(f"dissipation.{field_name} must be a TOML table.")
 
@@ -365,9 +390,12 @@ def _document_to_config_values(document: dict[str, Any]) -> dict[str, Any]:
     dissipation = document.get("dissipation")
     if dissipation is not None:
         for field_name, entry in dissipation.items():
-            if field_name not in config_values["dissipation"]:
-                config_values["dissipation"][field_name] = {}
-            config_values["dissipation"][field_name].update(deepcopy(entry))
+            if isinstance(entry, dict):
+                if field_name not in config_values["dissipation"]:
+                    config_values["dissipation"][field_name] = {}
+                config_values["dissipation"][field_name].update(deepcopy(entry))
+            else:
+                config_values["auto_dissipation"][field_name] = deepcopy(entry)
 
     return config_values
 
@@ -429,8 +457,9 @@ def _resolved_document(
             "alpha_force": config.alpha_force,
             "forcing_seed": config.forcing_seed,
             "force_amplitudes": deepcopy(config.force_amplitudes),
-            "dissipation": deepcopy(config.dissipation),
-        }
+        "dissipation": deepcopy(config.dissipation),
+        "auto_dissipation": asdict(config.auto_dissipation),
+    }
     )
     return {
         "title": title,
@@ -481,7 +510,10 @@ def _resolved_document(
             "forcing_seed": config_values["forcing_seed"],
             "force_amplitudes": config_values["force_amplitudes"],
         },
-        "dissipation": config_values["dissipation"],
+        "dissipation": {
+            **config_values["auto_dissipation"],
+            **config_values["dissipation"],
+        },
         "initial_condition": initial_condition.to_document(),
     }
 

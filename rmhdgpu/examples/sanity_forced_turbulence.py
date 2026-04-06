@@ -2,8 +2,8 @@
 
 This is a lightweight self-contained sanity script, not the recommended
 workflow for normal runs. For case-style usage, prefer
-`python -m rmhdgpu.run examples/forced_turbulence.input` and
-`python vis/forced_turbulence.py examples/forced_turbulence.input`.
+`python -m rmhdgpu.run examples/forced_turbulence.input`, then the generic
+`vis/plot_*` scripts on the saved outputs.
 
 Run with:
 
@@ -294,7 +294,7 @@ def main() -> None:
                 forcing_rng=forcing_rng,
             )
         if sample_index < len(sample_times) and np.isclose(event_time, sample_times[sample_index]):
-            energy_history.append(compute_energy_diagnostics(current, grid, fft, backend, workspace=workspace))
+            energy_history.append(compute_energy_diagnostics(current, grid, fft, backend, config, workspace=workspace))
             spectra_history.append(perpendicular_energy_spectrum_from_state(current, grid, backend))
             sample_index += 1
         if frame_index < len(frame_times) and np.isclose(event_time, frame_times[frame_index]):

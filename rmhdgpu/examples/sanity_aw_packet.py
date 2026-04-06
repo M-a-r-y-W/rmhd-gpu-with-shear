@@ -2,8 +2,8 @@
 
 This is a lightweight self-contained sanity script, not the recommended
 workflow for normal runs. For case-style usage, prefer
-`python -m rmhdgpu.run examples/aw_packet.input` and
-`python vis/aw_packet.py examples/aw_packet.input`.
+`python -m rmhdgpu.run examples/aw_packet.input`, then the generic
+`vis/plot_*` scripts on the saved outputs.
 
 Run with:
 

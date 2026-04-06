@@ -13,8 +13,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from rmhdgpu.auto_dissipation import (
+    AutoDissipationController,
+    disabled_auto_dissipation_diagnostics,
+)
 from rmhdgpu.backend import build_backend
 from rmhdgpu.diagnostics.alfvenic import alfvenic_cross_helicity, alfvenic_energy
+from rmhdgpu.diagnostics.budget import flatten_conserved_quantity_budgets
 from rmhdgpu.diagnostics.spectra import perpendicular_energy_spectrum_from_state
 from rmhdgpu.diagnostics.scalar import compute_energy_diagnostics, compute_scalar_diagnostics
 from rmhdgpu.errors import NonFiniteStateError
@@ -74,7 +79,14 @@ class _RunLogger:
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser for normal runs."""
 
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=(
+            "Dissipation is configured in .input files. Use manual per-field "
+            "[dissipation.<field>] blocks by default, or enable one common "
+            "adaptive coefficient with [dissipation] mode = \"auto\"."
+        ),
+    )
     parser.add_argument(
         "input_file",
         nargs="?",
@@ -196,7 +208,10 @@ def _diagnostics_row(
     grid: Any,
     fft: Any,
     backend: Any,
+    params: Any,
     workspace: Any,
+    budget_rhs_terms: dict[str, dict[str, float]] | None = None,
+    extra_scalar_diagnostics: dict[str, float] | None = None,
 ) -> dict[str, float | int]:
     row: dict[str, float | int] = {
         "step": step,
@@ -204,8 +219,21 @@ def _diagnostics_row(
         "dt": dt,
     }
     row.update(compute_scalar_diagnostics(state, grid, fft, backend, workspace=workspace))
-    row.update(compute_energy_diagnostics(state, grid, fft, backend, workspace=workspace))
+    row.update(compute_energy_diagnostics(state, grid, fft, backend, params, workspace=workspace))
     row["alfvenic_cross_helicity"] = alfvenic_cross_helicity(state, grid, fft)
+    row.update(
+        flatten_conserved_quantity_budgets(
+            s09.compute_conserved_quantity_budgets(
+                state,
+                grid=grid,
+                backend=backend,
+                params=params,
+                extra_rhs_terms=budget_rhs_terms,
+            )
+        )
+    )
+    if extra_scalar_diagnostics is not None:
+        row.update(extra_scalar_diagnostics)
     return row
 
 
@@ -232,6 +260,7 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
                     "spectra": config.t_out_spec,
                     "full_field": config.t_out_full,
                 },
+                "dissipation_mode": config.auto_dissipation.mode,
                 "initial_condition": settings.initial_condition.to_document(),
             },
         )
@@ -241,7 +270,6 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
         fft = FFTManager(grid, backend)
         mask = build_dealias_mask(grid, backend, mode=config.dealias_mode) if config.dealias else None
         workspace = Workspace(grid, backend)
-        linear_ops = s09.build_dissipation_operators(grid, config)
         state = build_initial_state(
             settings.initial_condition,
             grid=grid,
@@ -251,6 +279,25 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
             field_names=settings.config.field_names,
             params=settings.config,
         )
+        auto_dissipation_controller = None
+        auto_dissipation_diagnostics = disabled_auto_dissipation_diagnostics()
+        if config.auto_dissipation.enabled:
+            auto_dissipation_controller = AutoDissipationController.from_runtime(
+                settings=config.auto_dissipation,
+                field_names=config.field_names,
+                grid=grid,
+                backend=backend,
+                dealias_mask=mask,
+            )
+            auto_dissipation_controller.update(state, config)
+            auto_dissipation_diagnostics = auto_dissipation_controller.diagnostics()
+            linear_ops = s09.build_dissipation_operators(
+                grid,
+                config,
+                dissipation_spec=auto_dissipation_controller.effective_dissipation(),
+            )
+        else:
+            linear_ops = s09.build_dissipation_operators(grid, config)
 
         energy_initial = alfvenic_energy(state, grid, fft)
         cross_initial = alfvenic_cross_helicity(state, grid, fft)
@@ -287,6 +334,37 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
         next_fullfield_output = initial_output_time(config.t_out_full)
         dt_last = config.dt_init
         forcing_rng = backend.random_generator(config.forcing_seed) if config.use_forcing else None
+        track_budget = scalar_writer is not None
+        budget_interval_duration = 0.0
+        budget_interval_terms: dict[str, dict[str, float]] = {
+            "total_energy": {
+                "dissipation": 0.0,
+                "forcing": 0.0,
+            }
+        }
+
+        def _averaged_budget_terms() -> dict[str, dict[str, float]]:
+            if budget_interval_duration <= 0.0:
+                return {
+                    "total_energy": {
+                        "dissipation": 0.0,
+                        "forcing": 0.0,
+                    }
+                }
+            return {
+                quantity_name: {
+                    term_name: value / budget_interval_duration
+                    for term_name, value in rhs_terms.items()
+                }
+                for quantity_name, rhs_terms in budget_interval_terms.items()
+            }
+
+        def _reset_budget_interval() -> None:
+            nonlocal budget_interval_duration
+            budget_interval_duration = 0.0
+            for rhs_terms in budget_interval_terms.values():
+                for term_name in rhs_terms:
+                    rhs_terms[term_name] = 0.0
 
         def _write_due_diagnostics(*, dt_value: float) -> None:
             nonlocal next_scalar_output, next_spectra_output, next_fullfield_output
@@ -300,10 +378,22 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
                     grid=grid,
                     fft=fft,
                     backend=backend,
+                    params=config,
                     workspace=workspace,
+                    budget_rhs_terms=_averaged_budget_terms(),
+                    extra_scalar_diagnostics=auto_dissipation_diagnostics,
                 )
                 scalar_writer.write_row(row)
-                logger.event("scalar diagnostics", row)
+                logger.event(
+                    "scalar diagnostics",
+                    {
+                        "step": row["step"],
+                        "time": row["time"],
+                        "dt": row["dt"],
+                        "total_energy": row["total_energy"],
+                    },
+                )
+                _reset_budget_interval()
                 next_scalar_output = advance_output_time(
                     next_output_time=next_scalar_output,
                     cadence=config.t_out_scal,
@@ -369,10 +459,25 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
                     dt = config.dt_init
                 dt = min(dt, config.tmax - t)
 
-                state = if_ssprk3_step(state, dt, s09.ideal_rhs, linear_ops, rhs_kwargs=rhs_kwargs)
+                if track_budget:
+                    dissipation_before = s09.total_energy_dissipation_rhs(state, grid, backend, linear_ops, config)
+
+                stepped_state = if_ssprk3_step(state, dt, s09.ideal_rhs, linear_ops, rhs_kwargs=rhs_kwargs)
+
+                if track_budget:
+                    dissipation_after = s09.total_energy_dissipation_rhs(
+                        stepped_state, grid, backend, linear_ops, config
+                    )
+                    budget_interval_terms["total_energy"]["dissipation"] += 0.5 * (
+                        dissipation_before + dissipation_after
+                    ) * dt
+
                 if config.use_forcing:
+                    forcing_energy_before = (
+                        s09.total_energy(stepped_state, grid, backend, config) if track_budget else 0.0
+                    )
                     forcing_kick = generate_forcing_kick(
-                        state,
+                        stepped_state,
                         grid,
                         fft,
                         backend,
@@ -380,13 +485,31 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
                         forcing_rng,
                         dt,
                         workspace=workspace,
-                        out=workspace.get_state_buffer("forcing_kick", state.field_names),
+                        out=workspace.get_state_buffer("forcing_kick", stepped_state.field_names),
                     )
-                    state = apply_forcing_kick(state, forcing_kick, inplace=True)
+                    state = apply_forcing_kick(stepped_state, forcing_kick, inplace=True)
+                    if track_budget:
+                        budget_interval_terms["total_energy"]["forcing"] += (
+                            s09.total_energy(state, grid, backend, config) - forcing_energy_before
+                        )
+                else:
+                    state = stepped_state
+
+                if track_budget:
+                    budget_interval_duration += dt
 
                 t += dt
                 dt_last = dt
                 steps += 1
+
+                if auto_dissipation_controller is not None and auto_dissipation_controller.should_update(steps):
+                    auto_dissipation_controller.update(state, config)
+                    auto_dissipation_diagnostics = auto_dissipation_controller.diagnostics()
+                    linear_ops = s09.build_dissipation_operators(
+                        grid,
+                        config,
+                        dissipation_spec=auto_dissipation_controller.effective_dissipation(),
+                    )
 
                 if config.progress_output_every is not None and (
                     steps % config.progress_output_every == 0 or t >= config.tmax - 1.0e-15

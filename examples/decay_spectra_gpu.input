@@ -6,7 +6,9 @@
 #
 # Use:
 #   python -m rmhdgpu.run examples/decay_spectra_gpu.input
-#   python vis/decay_spectra.py examples/decay_spectra_gpu.input
+#   python vis/plot_scalars.py examples/outputs/scalar_diagnostics.csv
+#   python vis/plot_budget.py examples/outputs/scalar_diagnostics.csv
+#   python vis/plot_spectra.py examples/outputs/spectra.csv
 
 title = "Qualitative decaying turbulence spectra (GPU 256^3)"
 output_dir = "outputs"

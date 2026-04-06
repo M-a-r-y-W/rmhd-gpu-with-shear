@@ -7,7 +7,9 @@
 #
 # Use:
 #   python -m rmhdgpu.run examples/forced_turbulence.input
-#   python vis/forced_turbulence.py examples/forced_turbulence.input
+#   python vis/plot_scalars.py examples/outputs/scalar_diagnostics.csv
+#   python vis/plot_budget.py examples/outputs/scalar_diagnostics.csv
+#   python vis/plot_spectra.py examples/outputs/spectra.csv
 
 title = "Qualitative forced turbulence"
 output_dir = "outputs"

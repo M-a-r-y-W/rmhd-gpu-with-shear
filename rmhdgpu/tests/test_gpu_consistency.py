@@ -182,8 +182,12 @@ def test_short_unforced_nonlinear_run_numpy_vs_cupy() -> None:
 
     diagnostics_np = compute_scalar_diagnostics(final_np, grid_np, fft_np, backend_np, workspace=workspace_np)
     diagnostics_cp = compute_scalar_diagnostics(final_cp, grid_cp, fft_cp, backend_cp, workspace=workspace_cp)
-    diagnostics_np.update(compute_energy_diagnostics(final_np, grid_np, fft_np, backend_np, workspace=workspace_np))
-    diagnostics_cp.update(compute_energy_diagnostics(final_cp, grid_cp, fft_cp, backend_cp, workspace=workspace_cp))
+    diagnostics_np.update(
+        compute_energy_diagnostics(final_np, grid_np, fft_np, backend_np, config_np, workspace=workspace_np)
+    )
+    diagnostics_cp.update(
+        compute_energy_diagnostics(final_cp, grid_cp, fft_cp, backend_cp, config_cp, workspace=workspace_cp)
+    )
     diagnostics_np["alfvenic_cross_helicity"] = alfvenic_cross_helicity(final_np, grid_np, fft_np)
     diagnostics_cp["alfvenic_cross_helicity"] = alfvenic_cross_helicity(final_cp, grid_cp, fft_cp)
 

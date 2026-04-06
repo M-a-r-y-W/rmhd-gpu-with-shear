@@ -36,6 +36,7 @@ def _read_scalar_csv(path: Path) -> tuple[list[str], dict[str, np.ndarray]]:
 
 def _default_columns(fieldnames: list[str]) -> list[str]:
     preferred = [
+        "total_energy",
         "alfvenic_energy",
         "upar_energy",
         "dbpar_energy",
