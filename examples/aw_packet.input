@@ -23,7 +23,11 @@ Nz = 32
 tmax = 3.141592653589793
 dt_init = 7.0e-4
 use_variable_dt = false
+
+[output]
 t_out_scal = 0.3141592653589793
+t_out_spec = 0.0
+t_out_full = 0.0
 
 [backend]
 backend = "numpy"
@@ -39,3 +43,5 @@ type = "aw_packet"
 progress_output_every = 100
 
 # This run is ideal, so the default zero dissipation is retained.
+# Set `t_out_full > 0` to write `fullfields/fullfield_0001.h5`, etc.,
+# when `h5py` is installed.

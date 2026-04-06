@@ -20,7 +20,11 @@ Nz = 128
 tmax = 4.0
 dt_max = 2.0e-2
 cfl_number = 0.5
+
+[output]
 t_out_scal = 0.4
+t_out_spec = 0.5
+t_out_full = 0.0
 
 [backend]
 backend = "scipy_cpu"
@@ -48,6 +52,10 @@ type = "decaying_low_modes"
 # For this 128^3 setup that gave:
 #   nu_perp = 1.2977767829696784e-08
 #   nu_par  = 1.2977767829696785e-09
+#
+# The example keeps full-field HDF5 output disabled by default because it is
+# substantially heavier than the scalar and spectra files. Set `t_out_full`
+# to a positive cadence if you want full snapshots for later slice plots.
 
 [dissipation.psi]
 nu_perp = 1.2977767829696784e-08

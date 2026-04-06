@@ -12,26 +12,36 @@ Current solver scope includes:
 - anisotropic dissipation with integrating-factor time stepping
 - variable timestep support
 - stochastic forcing
-- scalar and spectral diagnostics
+- persistent scalar, spectral, and full-field diagnostics
 - NumPy, SciPy CPU, and CuPy backends
-- formal tests plus lightweight profiling and sanity scripts
+- tests plus lightweight profiling utilities
+
+## Installation
+
+From the repository root, install the package in editable mode:
+
+```bash
+python -m pip install -e .
+```
+
+After that, `python -m rmhdgpu.run ...` works from any folder, not just from inside the repository checkout. That is the most convenient setup for case-directory workflows and for running on a remote cluster.
 
 ## Running Simulations
 
-`rmhdgpu` now supports two normal run modes:
+There are two normal run modes:
 
 - input-file mode: `python -m rmhdgpu.run filename.input`
 - CLI-only mode: `python -m rmhdgpu.run --options ...`
 
-You can also combine them, with command-line arguments overriding the `.input` file:
+The usual workflow for real runs is a case directory with a commented `.input` file:
 
 ```bash
 python -m rmhdgpu.run cases/my_forced_case/input.input
-python -m rmhdgpu.run cases/my_forced_case/input.input --tmax 20.0
-python -m rmhdgpu.run --backend numpy --nx 64 --tmax 0.1
+python -m rmhdgpu.run cases/my_forced_case/input.input --tmax 20.0 --backend cupy
+python -m rmhdgpu.run --backend numpy --nx 64 --ny 64 --nz 64 --tmax 0.1
 ```
 
-For real runs, the recommended workflow is a case directory with a `.input` file and an `outputs/` directory written by the driver:
+Recommended case layout:
 
 ```text
 my_case/
@@ -40,19 +50,42 @@ my_case/
         resolved_config.toml
         run.log
         scalar_diagnostics.csv
+        spectra.csv
+        fullfields/
+            fullfield_0001.h5
+            fullfield_0002.h5
+            ...
 ```
 
-`.input` files use TOML syntax internally. They are meant to be copied, edited, and versioned per case.
+`.input` files use TOML syntax internally.
 
-If `output_dir` is omitted in a `.input` file, the driver uses `outputs` relative to the input-file location. In CLI-only mode, the default is `./outputs` relative to the current working directory.
+If `output_dir` is omitted in a `.input` file, the driver writes to `outputs` relative to the input-file location. In CLI-only mode, the default is `./outputs` relative to the current working directory.
 
-If you install the package in editable mode from the repository root,
+## Diagnostics Output
 
-```bash
-python -m pip install -e .
-```
+Diagnostics are controlled independently through the `[output]` section:
 
-then `python -m rmhdgpu.run ...` works from any folder, not just from inside the repository checkout. That is the most convenient setup for cluster usage and for keeping separate case directories elsewhere.
+- `t_out_scal`: scalar diagnostics cadence
+- `t_out_spec`: spectra cadence
+- `t_out_full`: full-field cadence
+
+Cadences are in simulation time units:
+
+- positive value: enable that output category
+- `0` or negative: disable that output category
+
+Outputs are:
+
+- `scalar_diagnostics.csv`: one row per output time, with `time`, `step`, and scalar quantities
+- `spectra.csv`: tidy/long CSV with columns `time`, `step`, `quantity`, `kperp`, `value`
+- `fullfields/fullfield_0001.h5`, `fullfield_0002.h5`, ...: one HDF5 snapshot per output time
+
+The full-field snapshots are self-contained. Each file stores:
+
+- `/metadata` with grid size, box size, backend, dtypes, and `x`, `y`, `z`
+- `/output/time`
+- `/output/step`
+- `/output/<field_name>` for each saved real-space field
 
 ## `.input` File Format
 
@@ -72,6 +105,11 @@ tmax = 10.0
 dt_init = 1e-3
 dt_max = 1e-2
 cfl_number = 0.3
+
+[output]
+t_out_scal = 0.1
+t_out_spec = 0.5
+t_out_full = 0.0
 
 [backend]
 backend = "cupy"
@@ -99,7 +137,8 @@ Supported sections are:
 
 - top level: `title`, `output_dir`
 - `[grid]`: `Nx`, `Ny`, `Nz`, `Lx`, `Ly`, `Lz`
-- `[time]`: `tmax`, `dt_init`, `dt_min`, `dt_max`, `cfl_number`, `use_variable_dt`, `t_out_scal`, `t_out_spec`, `t_out_full`
+- `[time]`: `tmax`, `dt_init`, `dt_min`, `dt_max`, `cfl_number`, `use_variable_dt`
+- `[output]`: `t_out_scal`, `t_out_spec`, `t_out_full`
 - `[backend]`: `backend`, `fft_workers`, `real_dtype`, `complex_dtype`
 - `[runtime]`: `runtime_check_every`, `progress_output_every`, `fail_on_nonfinite`, `dealias`, `dealias_mode`
 - `[physics]`: `vA`, `cs2_over_vA2`
@@ -107,145 +146,115 @@ Supported sections are:
 - `[dissipation.<field>]`
 - `[initial_condition]`
 
-The currently supported initial conditions are:
+Currently supported initial conditions are:
 
 - `type = "alfven_mode"` with `k_indices = [kx, ky, kz]`, `amplitude`, and `branch = "plus"` or `"minus"`
 - `type = "zero"`
-- `type = "aw_packet"` for the nonlinear Alfvén-wave packet example
-- `type = "decaying_low_modes"` for the low-mode decaying-turbulence example
+- `type = "aw_packet"`
+- `type = "decaying_low_modes"`
 
-## Example Cases
+## Example Inputs
 
-The repository root now includes ready-to-run example inputs:
+The repository root includes ready-to-run example inputs:
 
-- [`examples/aw_packet.input`](/Users/squjo23p/Otago%20University%20Dropbox/Jonathan%20Squire/Research/KRMHD/rmhd-gpu/examples/aw_packet.input)
-- [`examples/decay_spectra.input`](/Users/squjo23p/Otago%20University%20Dropbox/Jonathan%20Squire/Research/KRMHD/rmhd-gpu/examples/decay_spectra.input)
-- [`examples/decay_spectra_gpu.input`](/Users/squjo23p/Otago%20University%20Dropbox/Jonathan%20Squire/Research/KRMHD/rmhd-gpu/examples/decay_spectra_gpu.input)
-- [`examples/forced_turbulence.input`](/Users/squjo23p/Otago%20University%20Dropbox/Jonathan%20Squire/Research/KRMHD/rmhd-gpu/examples/forced_turbulence.input)
+- [`examples/aw_packet.input`](examples/aw_packet.input)
+- [`examples/decay_spectra.input`](examples/decay_spectra.input)
+- [`examples/decay_spectra_gpu.input`](examples/decay_spectra_gpu.input)
+- [`examples/forced_turbulence.input`](examples/forced_turbulence.input)
 
-The qualitative plots that used to live only in the `sanity_*` scripts now also have matching visualization scripts in the root [`vis/`](/Users/squjo23p/Otago%20University%20Dropbox/Jonathan%20Squire/Research/KRMHD/rmhd-gpu/vis) folder:
-
-```bash
-python vis/aw_packet.py examples/aw_packet.input
-python vis/decay_spectra.py examples/decay_spectra.input
-python vis/forced_turbulence.py examples/forced_turbulence.input
-```
-
-## Backend Notes
-
-- The CuPy backend keeps Fourier and workspace arrays on device during evolution.
-- Scalar diagnostics and runtime finite checks only transfer scalar reductions back to the host.
-- Spectra and full-field outputs intentionally return NumPy arrays because they are usually consumed by plotting or I/O code.
-- Forcing uses backend-native random generation when available. A fixed seed is reproducible within a backend, but NumPy and CuPy runs are not expected to be bitwise identical.
-
-## Tests
-
-CPU-focused tests live under [`rmhdgpu/tests`](/home/squjo23p/rmhd-gpu/rmhdgpu/tests).
-
-GPU-focused tests skip cleanly when CuPy is unavailable or when a usable CUDA device is not present:
-
-- [`test_cupy_backend.py`](/home/squjo23p/rmhd-gpu/rmhdgpu/tests/test_cupy_backend.py)
-- [`test_gpu_consistency.py`](/home/squjo23p/rmhd-gpu/rmhdgpu/tests/test_gpu_consistency.py)
-- [`test_gpu_runtime_checks.py`](/home/squjo23p/rmhd-gpu/rmhdgpu/tests/test_gpu_runtime_checks.py)
-- [`test_gpu_benchmarks.py`](/home/squjo23p/rmhd-gpu/rmhdgpu/tests/test_gpu_benchmarks.py)
-
-## Running the code
-
-The normal driver is [`rmhdgpu/run.py`](/Users/squjo23p/Otago%20University%20Dropbox/Jonathan%20Squire/Research/KRMHD/rmhd-gpu/rmhdgpu/run.py), and the recommended workflow is now to run a commented `.input` file from a case directory:
+For example:
 
 ```bash
 python -m rmhdgpu.run examples/decay_spectra.input
-python -m rmhdgpu.run examples/forced_turbulence.input --tmax 1.0 --backend cupy
+python -m rmhdgpu.run examples/decay_spectra_gpu.input
 ```
 
-CLI-only mode is still supported for quick tests:
+## Plotting Saved Output
+
+The generic post-processing scripts live under [`vis/`](vis):
 
 ```bash
-python -m rmhdgpu.run --backend numpy --nx 32 --ny 32 --nz 32 --tmax 0.05
+python vis/plot_scalars.py cases/my_case/outputs/scalar_diagnostics.csv
+python vis/plot_spectra.py cases/my_case/outputs/spectra.csv
+python vis/plot_fullfield.py cases/my_case/outputs/fullfields --field omega --slice-dir z
 ```
 
-The `sanity_*` scripts in [`rmhdgpu/examples/`](/Users/squjo23p/Otago%20University%20Dropbox/Jonathan%20Squire/Research/KRMHD/rmhd-gpu/rmhdgpu/examples) are still kept as lightweight self-contained checks, but they are not the recommended way to set up normal runs. The matching plotting scripts in [`vis/`](/Users/squjo23p/Otago%20University%20Dropbox/Jonathan%20Squire/Research/KRMHD/rmhd-gpu/vis) reproduce the same qualitative diagnostics starting from a normal `.input` file:
+Useful notes:
 
-```bash
-python vis/decay_spectra.py examples/decay_spectra.input
-python vis/forced_turbulence.py examples/forced_turbulence.input
-```
+- `plot_scalars.py` plots common energy-like quantities by default, or specific columns via `--columns`
+- `plot_spectra.py` writes one log-log plot per quantity, colored by time
+- `plot_fullfield.py` accepts either a `fullfields/` directory or a single snapshot `.h5` file
+- most driver, plotting, profiling, and example scripts support `--help` to print available options
 
-You can use `-h` on the driver, tests, examples, and visualisation scripts to list available options.
+## Tests and Profiling
 
-## Profiling
-
-The profiling utilities live under [`rmhdgpu/profiling`](/home/squjo23p/rmhd-gpu/rmhdgpu/profiling):
-
-- [`benchmark_backends.py`](/home/squjo23p/rmhd-gpu/rmhdgpu/profiling/benchmark_backends.py): compare `numpy`, `scipy_cpu`, and `cupy` on short representative runs
-- [`profile_timestep.py`](/home/squjo23p/rmhd-gpu/rmhdgpu/profiling/profile_timestep.py): coarse timing breakdown for FFTs, Poisson brackets, RHS work, forcing, diagnostics, and the whole step
-- [`gpu_sanity.py`](/home/squjo23p/rmhd-gpu/rmhdgpu/profiling/gpu_sanity.py): verify that the CuPy backend is active, arrays stay on device, and short NumPy/CuPy runs agree within tolerance
+CPU-focused tests live under [`rmhdgpu/tests`](rmhdgpu/tests). GPU-focused tests skip cleanly when CuPy or a usable CUDA device is unavailable.
 
 Typical commands:
 
 ```bash
-python -m pytest rmhdgpu/tests/test_cupy_backend.py rmhdgpu/tests/test_gpu_consistency.py rmhdgpu/tests/test_gpu_runtime_checks.py rmhdgpu/tests/test_gpu_benchmarks.py
 python -m pytest
+python -m pytest rmhdgpu/tests/test_cupy_backend.py rmhdgpu/tests/test_gpu_consistency.py rmhdgpu/tests/test_gpu_runtime_checks.py rmhdgpu/tests/test_gpu_benchmarks.py
+```
+
+Profiling utilities live under [`rmhdgpu/profiling`](rmhdgpu/profiling):
+
+- [`benchmark_backends.py`](rmhdgpu/profiling/benchmark_backends.py)
+- [`profile_timestep.py`](rmhdgpu/profiling/profile_timestep.py)
+- [`gpu_sanity.py`](rmhdgpu/profiling/gpu_sanity.py)
+
+Typical commands:
+
+```bash
 python -m rmhdgpu.profiling.benchmark_backends --backend numpy --backend scipy_cpu --backend cupy --nx 64 --nx 96 --steps 10
 python -m rmhdgpu.profiling.profile_timestep --backend cupy --nx 64 --repeats 2
 python -m rmhdgpu.profiling.gpu_sanity --nx 32 --steps 6
 ```
 
+The `sanity_*` scripts under [`rmhdgpu/examples`](rmhdgpu/examples) are kept only as lightweight developer checks. They are not the recommended workflow for normal runs.
+
 ## Running on Aoraki GPUs
 
-For this project, the most reliable setup on Aoraki is a user-local Conda environment. This avoids conflicts with the cluster’s system Python and makes the setup reproducible for students.
+For this project, the most reliable setup on Aoraki is a user-local Conda environment. This avoids relying on the cluster system Python and makes the setup reproducible for students.
 
-The main thing to remember is:
+Important:
 
-Do not use module load python for this project.
+Do not use `module load python` for this project.
 
-That module can override the Conda environment and leave you using /opt/spack/.../python even after conda activate, which usually shows up as missing imports such as numpy or cupy.
-
-The recommended pattern is:
-
-```bash
-module purge
-module load cuda
-source ~/.bashrc
-conda activate ~/conda-envs/curmpy
-```
+That can override the Conda environment and leave you running `/opt/spack/.../python` even after activation.
 
 ### Create the environment
-
-Before doing this, you have to create a dedicated environment in your home directory:
 
 ```bash
 mkdir -p ~/conda-envs
 conda create -y -p ~/conda-envs/curmpy python=3.11
 conda activate ~/conda-envs/curmpy
 python -m pip install --upgrade pip
-python -m pip install numpy scipy matplotlib pytest cupy
+python -m pip install numpy scipy matplotlib pytest h5py cupy
 cd ~/path/to/rmhd-gpu
 python -m pip install -e .
 ```
 
-Then check that the environment is actually providing the Python interpreter:
+Check that the environment is really active:
 
 ```bash
 which python
 python -V
 python -c "import sys; print(sys.executable)"
-python -c "import numpy, scipy, matplotlib, cupy; print('Environment OK')"
+python -c "import numpy, scipy, matplotlib, h5py, cupy; print('Environment OK')"
 ```
 
-The which python and sys.executable outputs should point to something like
+The Python path should point to something like:
 
-```bash
+```text
 /home/<username>/conda-envs/curmpy/bin/python
 ```
 
-not `/opt/spack/....`
+not `/opt/spack/...`.
 
 ### Optional activation helper
 
-To avoid typing the full activation sequence every time, add a small helper script:
-
-```
+```bash
 mkdir -p ~/bin
 cat > ~/bin/activate-curmpy <<'EOF'
 #!/usr/bin/env bash
@@ -256,59 +265,31 @@ EOF
 chmod +x ~/bin/activate-curmpy
 ```
 
-You can also add an alias to `~/.bashrc`:
+Optional alias in `~/.bashrc`:
 
-```
+```bash
 alias activate-curmpy="source ~/bin/activate-curmpy"
 ```
 
-Then, in a new shell, you can just run:
-
-```
-activate-curmpy
-```
-
-### Interactive GPU workflow
-
-A typical interactive workflow on an H100 node looks like this:
+### Interactive workflow
 
 ```bash
 srun --partition=aoraki_gpu_H100 --gres=gpu:1 --cpus-per-task=8 --mem=32G --time=02:00:00 --pty bash
 module purge
 module load cuda
-source ~/.bashrc
-conda activate ~/conda-envs/curmpy
-cd ~/path/to/rmhd-gpu
-```
-
-If you use the helper script, the middle part becomes:
-
-```
-module purge
-module load cuda
 activate-curmpy
+cd ~/cases/my_forced_case
+python -m pytest ~/path/to/rmhd-gpu/rmhdgpu/tests/test_cupy_backend.py ~/path/to/rmhd-gpu/rmhdgpu/tests/test_gpu_consistency.py
+python -m rmhdgpu.run input.input --backend cupy --tmax 1.0
 ```
 
-Once the environment is active, you can run tests or examples as usual. For example:
-
-```
-mkdir -p cases/my_forced_case
-cp examples/forced_turbulence.input cases/my_forced_case/input.input
-python -m pytest rmhdgpu/tests/test_cupy_backend.py rmhdgpu/tests/test_gpu_consistency.py
-python -m rmhdgpu.run cases/my_forced_case/input.input --backend cupy --tmax 1.0
-```
-Or as a quick sanity check
-```
-python -m rmhdgpu.examples.sanity_decay_spectra --gpu-256
-```
-
-If your account uses a different GPU partition, replace aoraki_gpu_H100 with the appropriate one, such as aoraki_gpu_A100_80GB.
+If your account uses a different GPU partition, replace `aoraki_gpu_H100` with the appropriate one.
 
 ### Batch / Slurm jobs
 
-For batch jobs, activate the environment explicitly inside the job script. A minimal example is:
+Minimal job script:
 
-```
+```bash
 #!/bin/bash
 #SBATCH --job-name=rmhdgpu
 #SBATCH --partition=aoraki_gpu_H100
@@ -322,37 +303,30 @@ module load cuda
 source ~/.bashrc
 export PYTHONNOUSERSITE=1
 conda activate ~/conda-envs/curmpy
-cd ~/path/to/rmhd-gpu
 
-python -m pytest rmhdgpu/tests/test_cupy_backend.py rmhdgpu/tests/test_gpu_consistency.py
-python -m rmhdgpu.run cases/my_forced_case/input.input --backend cupy --tmax 1.0
+cd ~/cases/my_forced_case
+python -m rmhdgpu.run input.input --backend cupy
 ```
 
-Submit it with: `sbatch run_rmhdgpu.slurm`
+Submit with:
+
+```bash
+sbatch run_rmhdgpu.slurm
+```
 
 ### Quick diagnostics
 
-If something seems wrong, check which Python is actually active:
+If something seems wrong:
 
-```
+```bash
 which python
 python -V
 python -c "import sys; print(sys.executable)"
 python -c "import numpy, cupy; print(numpy.__version__, cupy.__version__)"
 ```
 
-If which python points to /opt/spack/..., then the wrong Python is active and you are not actually using the Conda environment.
-
-Common mistakes
-
-The most common issues are:
-- running module load python
-- forgetting to activate the Conda environment in a fresh shell
-- assuming the shell prompt alone proves the environment is correct
-- using the system Python in a batch job instead of activating the environment explicitly
-
-When in doubt, always check: `which python`
+If `which python` points to `/opt/spack/...`, the wrong Python is active.
 
 ### Codex on Aoraki
 
-Codex CLI can be run from an interactive Aoraki session in the same way as any other terminal tool. Run it only after the environment is activated, so imports, CuPy detection, and test behavior match the actual cluster run.
+Codex CLI can be run from an interactive Aoraki session like any other terminal tool. Run it only after the environment is activated so imports, CuPy detection, and tests match the actual cluster environment.

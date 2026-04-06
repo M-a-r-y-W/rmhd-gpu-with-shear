@@ -26,6 +26,19 @@ def _default_force_amplitudes_for_fields(field_names: list[str]) -> dict[str, fl
     return {name: 0.0 for name in field_names}
 
 
+def _normalize_output_cadence(name: str, value: float | int | None) -> float:
+    """Normalize output cadences so nonpositive values cleanly disable output."""
+
+    if value is None:
+        return 0.0
+    cadence = float(value)
+    if not np.isfinite(cadence):
+        raise ValueError(f"{name} must be a finite number; got {value!r}.")
+    if cadence <= 0.0:
+        return 0.0
+    return cadence
+
+
 @dataclass(slots=True)
 class Config:
     """Container for simulation-wide parameters.
@@ -56,8 +69,8 @@ class Config:
     progress_output_every: int | None = 100
     fail_on_nonfinite: bool = True
     t_out_scal: float = 0.1
-    t_out_spec: float = 0.1
-    t_out_full: float = 0.1
+    t_out_spec: float = 0.0
+    t_out_full: float = 0.0
     dealias: bool = True
     dealias_mode: str = "two_thirds"
     vA: float = 1.0
@@ -86,11 +99,14 @@ class Config:
                 raise ValueError(f"{name} must be positive; got {value!r}.")
             setattr(self, name, value)
 
-        for name in ("tmax", "dt_init", "t_out_scal", "t_out_spec", "t_out_full", "cfl_number"):
+        for name in ("tmax", "dt_init", "cfl_number"):
             value = float(getattr(self, name))
             if value <= 0.0:
                 raise ValueError(f"{name} must be positive; got {value!r}.")
             setattr(self, name, value)
+
+        for name in ("t_out_scal", "t_out_spec", "t_out_full"):
+            setattr(self, name, _normalize_output_cadence(name, getattr(self, name)))
 
         if self.dt_min is not None:
             self.dt_min = float(self.dt_min)

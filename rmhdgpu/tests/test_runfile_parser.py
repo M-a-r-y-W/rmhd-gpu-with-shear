@@ -141,3 +141,29 @@ type = "zero"
     assert settings.config.force_amplitudes["psi"] == 0.02
     assert settings.config.force_amplitudes["omega"] == 0.03
     assert settings.initial_condition.type == "zero"
+
+
+def test_input_file_output_section_parses(tmp_path) -> None:
+    input_file = tmp_path / "outputs.input"
+    input_file.write_text(
+        """
+[grid]
+Nx = 8
+Ny = 8
+Nz = 8
+
+[output]
+t_out_scal = 0.25
+t_out_spec = 0.5
+t_out_full = 0.0
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    settings = resolve_run_settings(runfile_path=input_file)
+
+    assert settings.config.t_out_scal == 0.25
+    assert settings.config.t_out_spec == 0.5
+    assert settings.config.t_out_full == 0.0
+    assert settings.resolved_document["output"]["t_out_scal"] == 0.25

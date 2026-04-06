@@ -23,6 +23,7 @@ _TOP_LEVEL_KEYS = {
     "output_dir",
     "grid",
     "time",
+    "output",
     "backend",
     "runtime",
     "physics",
@@ -43,6 +44,7 @@ _SECTION_KEYS = {
         "t_out_spec",
         "t_out_full",
     },
+    "output": {"t_out_scal", "t_out_spec", "t_out_full"},
     "backend": {"backend", "fft_workers", "real_dtype", "complex_dtype"},
     "runtime": {"runtime_check_every", "progress_output_every", "fail_on_nonfinite", "dealias", "dealias_mode"},
     "physics": {"vA", "cs2_over_vA2"},
@@ -67,6 +69,7 @@ _SECTION_KEYS = {
 _SECTION_TO_CONFIG_KEYS = {
     "grid": {"Nx", "Ny", "Nz", "Lx", "Ly", "Lz"},
     "time": {"tmax", "dt_init", "dt_min", "dt_max", "cfl_number", "use_variable_dt", "t_out_scal", "t_out_spec", "t_out_full"},
+    "output": {"t_out_scal", "t_out_spec", "t_out_full"},
     "backend": {"backend", "fft_workers", "real_dtype", "complex_dtype"},
     "runtime": {"runtime_check_every", "progress_output_every", "fail_on_nonfinite", "dealias", "dealias_mode"},
     "physics": {"vA", "cs2_over_vA2"},
@@ -272,13 +275,19 @@ def cli_overrides_from_args(args: argparse.Namespace) -> dict[str, Any]:
         "dt_max": "dt_max",
         "cfl_number": "cfl_number",
         "use_variable_dt": "use_variable_dt",
-        "t_out_scal": "t_out_scal",
-        "t_out_spec": "t_out_spec",
-        "t_out_full": "t_out_full",
     }
     for cli_key, config_key in time_map.items():
         if cli_key in values:
             _set_section("time", config_key, values[cli_key])
+
+    output_map = {
+        "t_out_scal": "t_out_scal",
+        "t_out_spec": "t_out_spec",
+        "t_out_full": "t_out_full",
+    }
+    for cli_key, config_key in output_map.items():
+        if cli_key in values:
+            _set_section("output", config_key, values[cli_key])
 
     backend_map = {"backend": "backend", "fft_workers": "fft_workers"}
     for cli_key, config_key in backend_map.items():
@@ -344,7 +353,7 @@ def _apply_section_to_config_dict(config_values: dict[str, Any], section_name: s
 
 def _document_to_config_values(document: dict[str, Any]) -> dict[str, Any]:
     config_values = default_config_dict()
-    for section_name, allowed_keys in _SECTION_TO_CONFIG_KEYS.items():
+    for section_name in ("grid", "time", "output", "backend", "runtime", "physics", "forcing"):
         section_data = _require_table(document, section_name)
         _apply_section_to_config_dict(config_values, section_name, section_data)
 
@@ -441,6 +450,8 @@ def _resolved_document(
             "dt_max": config_values["dt_max"],
             "cfl_number": config_values["cfl_number"],
             "use_variable_dt": config_values["use_variable_dt"],
+        },
+        "output": {
             "t_out_scal": config_values["t_out_scal"],
             "t_out_spec": config_values["t_out_spec"],
             "t_out_full": config_values["t_out_full"],

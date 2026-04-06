@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import shlex
 import shutil
 import socket
@@ -16,6 +15,7 @@ from typing import Any
 
 from rmhdgpu.backend import build_backend
 from rmhdgpu.diagnostics.alfvenic import alfvenic_cross_helicity, alfvenic_energy
+from rmhdgpu.diagnostics.spectra import perpendicular_energy_spectrum_from_state
 from rmhdgpu.diagnostics.scalar import compute_energy_diagnostics, compute_scalar_diagnostics
 from rmhdgpu.errors import NonFiniteStateError
 from rmhdgpu.example_setups import build_initial_state
@@ -24,6 +24,18 @@ from rmhdgpu.fft import FFTManager
 from rmhdgpu.forcing import apply_forcing_kick, generate_forcing_kick
 from rmhdgpu.grid import build_grid
 from rmhdgpu.masks import build_dealias_mask
+from rmhdgpu.output import (
+    FULLFIELD_DIAGNOSTICS_DIRNAME,
+    SCALAR_DIAGNOSTICS_FILENAME,
+    SPECTRA_DIAGNOSTICS_FILENAME,
+    FullFieldHDF5Writer,
+    ScalarDiagnosticsWriter,
+    SpectraDiagnosticsWriter,
+    advance_output_time,
+    initial_output_time,
+    output_cadence_enabled,
+    output_due,
+)
 from rmhdgpu.runfile import (
     LEGACY_INPUT_SUFFIX,
     PRIMARY_INPUT_SUFFIX,
@@ -163,6 +175,11 @@ def _startup_metadata(settings: RunSettings, output_dir: Path) -> dict[str, Any]
         "output_dir": str(output_dir),
         "backend": settings.config.backend,
         "grid": [settings.config.Nx, settings.config.Ny, settings.config.Nz],
+        "output_cadences": {
+            "scalar": settings.config.t_out_scal,
+            "spectra": settings.config.t_out_spec,
+            "full_field": settings.config.t_out_full,
+        },
         "hostname": socket.gethostname(),
         "python_executable": sys.executable,
         "git_commit": _git_commit_hash(),
@@ -183,26 +200,13 @@ def _diagnostics_row(
 ) -> dict[str, float | int]:
     row: dict[str, float | int] = {
         "step": step,
-        "t": time,
+        "time": time,
         "dt": dt,
     }
     row.update(compute_scalar_diagnostics(state, grid, fft, backend, workspace=workspace))
     row.update(compute_energy_diagnostics(state, grid, fft, backend, workspace=workspace))
     row["alfvenic_cross_helicity"] = alfvenic_cross_helicity(state, grid, fft)
     return row
-
-
-def _write_scalar_row(
-    writer: csv.DictWriter[str] | None,
-    handle: Any,
-    row: dict[str, float | int],
-) -> csv.DictWriter[str]:
-    if writer is None:
-        writer = csv.DictWriter(handle, fieldnames=list(row.keys()))
-        writer.writeheader()
-    writer.writerow(row)
-    handle.flush()
-    return writer
 
 
 def run_simulation(settings: RunSettings) -> dict[str, Any]:
@@ -223,6 +227,11 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
                 "input_file": None if settings.input_file is None else str(settings.input_file),
                 "backend": config.backend,
                 "grid": [config.Nx, config.Ny, config.Nz],
+                "output_cadences": {
+                    "scalar": config.t_out_scal,
+                    "spectra": config.t_out_spec,
+                    "full_field": config.t_out_full,
+                },
                 "initial_condition": settings.initial_condition.to_document(),
             },
         )
@@ -253,86 +262,153 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
             "dealias_mask": mask,
         }
 
-        scalar_csv_path = output_dir / "scalar_diagnostics.csv"
-        with scalar_csv_path.open("w", encoding="utf-8", newline="") as scalar_handle:
-            scalar_writer: csv.DictWriter[str] | None = None
+        scalar_csv_path = output_dir / SCALAR_DIAGNOSTICS_FILENAME
+        spectra_csv_path = output_dir / SPECTRA_DIAGNOSTICS_FILENAME
+        fullfield_output_dir = output_dir / FULLFIELD_DIAGNOSTICS_DIRNAME
 
-            t = 0.0
-            steps = 0
-            next_scalar_output = config.t_out_scal
-            dt_last = config.dt_init
-            forcing_rng = backend.random_generator(config.forcing_seed) if config.use_forcing else None
+        scalar_writer = ScalarDiagnosticsWriter(scalar_csv_path) if output_cadence_enabled(config.t_out_scal) else None
+        spectra_writer = (
+            SpectraDiagnosticsWriter(spectra_csv_path) if output_cadence_enabled(config.t_out_spec) else None
+        )
+        fullfield_writer = None
+        if output_cadence_enabled(config.t_out_full):
+            fullfield_writer = FullFieldHDF5Writer(
+                fullfield_output_dir,
+                grid=grid,
+                backend=backend,
+                field_names=config.field_names,
+                backend_name=config.backend,
+            )
 
-            try:
-                if config.fail_on_nonfinite:
-                    check_state_finite(state, backend, time=t, step=steps, context="run startup")
+        t = 0.0
+        steps = 0
+        next_scalar_output = initial_output_time(config.t_out_scal)
+        next_spectra_output = initial_output_time(config.t_out_spec)
+        next_fullfield_output = initial_output_time(config.t_out_full)
+        dt_last = config.dt_init
+        forcing_rng = backend.random_generator(config.forcing_seed) if config.use_forcing else None
 
-                initial_row = _diagnostics_row(
+        def _write_due_diagnostics(*, dt_value: float) -> None:
+            nonlocal next_scalar_output, next_spectra_output, next_fullfield_output
+
+            if scalar_writer is not None and output_due(time=t, next_output_time=next_scalar_output, tmax=config.tmax):
+                row = _diagnostics_row(
                     state,
                     step=steps,
                     time=t,
-                    dt=0.0,
+                    dt=dt_value,
                     grid=grid,
                     fft=fft,
                     backend=backend,
                     workspace=workspace,
                 )
-                scalar_writer = _write_scalar_row(scalar_writer, scalar_handle, initial_row)
-                logger.event("scalar diagnostics", initial_row)
+                scalar_writer.write_row(row)
+                logger.event("scalar diagnostics", row)
+                next_scalar_output = advance_output_time(
+                    next_output_time=next_scalar_output,
+                    cadence=config.t_out_scal,
+                    current_time=t,
+                )
 
-                while t < config.tmax - 1.0e-15:
-                    if config.use_variable_dt:
-                        dt = compute_cfl_timestep(state, grid, fft, config, dt_prev=dt_last, workspace=workspace)
-                    else:
-                        dt = config.dt_init
-                    dt = min(dt, config.tmax - t)
+            if spectra_writer is not None and output_due(time=t, next_output_time=next_spectra_output, tmax=config.tmax):
+                spectra = perpendicular_energy_spectrum_from_state(state, grid, backend)
+                spectra_writer.write_spectra(time=t, step=steps, spectra=spectra)
+                logger.event(
+                    "spectra diagnostics",
+                    {
+                        "time": t,
+                        "step": steps,
+                        "quantities": [key for key in spectra if key != "kperp"],
+                        "shell_count": int(len(spectra["kperp"])),
+                    },
+                )
+                next_spectra_output = advance_output_time(
+                    next_output_time=next_spectra_output,
+                    cadence=config.t_out_spec,
+                    current_time=t,
+                )
 
-                    state = if_ssprk3_step(state, dt, s09.ideal_rhs, linear_ops, rhs_kwargs=rhs_kwargs)
-                    if config.use_forcing:
-                        forcing_kick = generate_forcing_kick(
-                            state,
-                            grid,
-                            fft,
-                            backend,
-                            config,
-                            forcing_rng,
-                            dt,
-                            workspace=workspace,
-                            out=workspace.get_state_buffer("forcing_kick", state.field_names),
-                        )
-                        state = apply_forcing_kick(state, forcing_kick, inplace=True)
+            if fullfield_writer is not None and output_due(
+                time=t,
+                next_output_time=next_fullfield_output,
+                tmax=config.tmax,
+            ):
+                output_index = fullfield_writer.write_state(
+                    state,
+                    time=t,
+                    step=steps,
+                    fft=fft,
+                    backend=backend,
+                    field_names=config.field_names,
+                )
+                logger.event(
+                    "full-field diagnostics",
+                    {
+                        "time": t,
+                        "step": steps,
+                        "output_index": output_index + 1,
+                        "path": str(fullfield_writer.snapshot_path(output_index)),
+                    },
+                )
+                next_fullfield_output = advance_output_time(
+                    next_output_time=next_fullfield_output,
+                    cadence=config.t_out_full,
+                    current_time=t,
+                )
 
-                    t += dt
-                    dt_last = dt
-                    steps += 1
+        try:
+            if config.fail_on_nonfinite:
+                check_state_finite(state, backend, time=t, step=steps, context="run startup")
 
-                    if config.progress_output_every is not None and (
-                        steps % config.progress_output_every == 0 or t >= config.tmax - 1.0e-15
-                    ):
-                        logger.event("progress", {"step": steps, "t": t, "dt": dt})
+            _write_due_diagnostics(dt_value=0.0)
 
-                    if config.fail_on_nonfinite and (
-                        steps % config.runtime_check_every == 0 or t >= config.tmax - 1.0e-15
-                    ):
-                        check_state_finite(state, backend, time=t, step=steps, context="run")
+            while t < config.tmax - 1.0e-15:
+                if config.use_variable_dt:
+                    dt = compute_cfl_timestep(state, grid, fft, config, dt_prev=dt_last, workspace=workspace)
+                else:
+                    dt = config.dt_init
+                dt = min(dt, config.tmax - t)
 
-                    if t >= next_scalar_output - 1.0e-15 or t >= config.tmax - 1.0e-15:
-                        row = _diagnostics_row(
-                            state,
-                            step=steps,
-                            time=t,
-                            dt=dt,
-                            grid=grid,
-                            fft=fft,
-                            backend=backend,
-                            workspace=workspace,
-                        )
-                        scalar_writer = _write_scalar_row(scalar_writer, scalar_handle, row)
-                        logger.event("scalar diagnostics", row)
-                        next_scalar_output += config.t_out_scal
-            except NonFiniteStateError as exc:
-                logger.event("run failed", {"error": str(exc)})
-                raise SystemExit(str(exc)) from exc
+                state = if_ssprk3_step(state, dt, s09.ideal_rhs, linear_ops, rhs_kwargs=rhs_kwargs)
+                if config.use_forcing:
+                    forcing_kick = generate_forcing_kick(
+                        state,
+                        grid,
+                        fft,
+                        backend,
+                        config,
+                        forcing_rng,
+                        dt,
+                        workspace=workspace,
+                        out=workspace.get_state_buffer("forcing_kick", state.field_names),
+                    )
+                    state = apply_forcing_kick(state, forcing_kick, inplace=True)
+
+                t += dt
+                dt_last = dt
+                steps += 1
+
+                if config.progress_output_every is not None and (
+                    steps % config.progress_output_every == 0 or t >= config.tmax - 1.0e-15
+                ):
+                    logger.event("progress", {"step": steps, "time": t, "dt": dt})
+
+                if config.fail_on_nonfinite and (
+                    steps % config.runtime_check_every == 0 or t >= config.tmax - 1.0e-15
+                ):
+                    check_state_finite(state, backend, time=t, step=steps, context="run")
+
+                _write_due_diagnostics(dt_value=dt)
+        except (ImportError, NonFiniteStateError) as exc:
+            logger.event("run failed", {"error": str(exc)})
+            raise SystemExit(str(exc)) from exc
+        finally:
+            if scalar_writer is not None:
+                scalar_writer.close()
+            if spectra_writer is not None:
+                spectra_writer.close()
+            if fullfield_writer is not None:
+                fullfield_writer.close()
 
         energy_final = alfvenic_energy(state, grid, fft)
         cross_final = alfvenic_cross_helicity(state, grid, fft)
@@ -348,8 +424,13 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
             "alfvenic_cross_helicity_final": cross_final,
             "psi_hat_max_abs": backend.scalar_to_float(backend.xp.max(backend.xp.abs(state["psi"]))),
             "output_dir": str(output_dir),
-            "scalar_diagnostics_csv": str(scalar_csv_path),
         }
+        if output_cadence_enabled(config.t_out_scal):
+            summary["scalar_diagnostics_csv"] = str(scalar_csv_path)
+        if output_cadence_enabled(config.t_out_spec):
+            summary["spectra_csv"] = str(spectra_csv_path)
+        if output_cadence_enabled(config.t_out_full):
+            summary["fullfields_dir"] = str(fullfield_output_dir)
         logger.event("run complete", summary)
         return summary
     finally:

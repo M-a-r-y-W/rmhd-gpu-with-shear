@@ -21,7 +21,11 @@ Nz = 96
 tmax = 4.0
 dt_max = 1.5e-2
 cfl_number = 0.35
+
+[output]
 t_out_scal = 0.5
+t_out_spec = 1.0
+t_out_full = 0.0
 
 [backend]
 backend = "scipy_cpu"
@@ -57,6 +61,10 @@ type = "zero"
 # For this 96^3 setup that gave:
 #   nu_perp = 7.0602100382628398e-08
 #   nu_par  = 7.0602100382628398e-09
+#
+# Full-field HDF5 output is disabled by default here to keep the example
+# relatively light. Set `t_out_full` to a positive value when you want saved
+# slices for `vis/plot_fullfield.py`.
 
 [dissipation.psi]
 nu_perp = 7.0602100382628398e-08

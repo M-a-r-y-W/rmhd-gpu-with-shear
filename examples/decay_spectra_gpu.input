@@ -20,7 +20,11 @@ Nz = 256
 tmax = 1.0
 dt_max = 2.0e-2
 cfl_number = 0.5
+
+[output]
 t_out_scal = 0.1
+t_out_spec = 0.25
+t_out_full = 0.0
 
 [backend]
 backend = "cupy"
@@ -38,6 +42,9 @@ type = "decaying_low_modes"
 # For this 256^3 GPU-targeted case that gives:
 #   nu_perp = 3.0220056971302893e-10
 #   nu_par  = 3.0220056971302895e-11
+#
+# Leave `t_out_full = 0` for lightweight runs, or set a positive cadence to
+# save full-field HDF5 snapshots when `h5py` is available.
 
 [dissipation.psi]
 nu_perp = 3.0220056971302893e-10
