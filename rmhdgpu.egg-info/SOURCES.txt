@@ -1,15 +1,18 @@
 README.md
 pyproject.toml
 rmhdgpu/__init__.py
+rmhdgpu/auto_dissipation.py
 rmhdgpu/backend.py
 rmhdgpu/config.py
 rmhdgpu/errors.py
+rmhdgpu/example_setups.py
 rmhdgpu/fft.py
 rmhdgpu/forcing.py
 rmhdgpu/grid.py
 rmhdgpu/io.py
 rmhdgpu/masks.py
 rmhdgpu/operators.py
+rmhdgpu/output.py
 rmhdgpu/run.py
 rmhdgpu/runfile.py
 rmhdgpu/state.py
@@ -23,6 +26,7 @@ rmhdgpu.egg-info/requires.txt
 rmhdgpu.egg-info/top_level.txt
 rmhdgpu/diagnostics/__init__.py
 rmhdgpu/diagnostics/alfvenic.py
+rmhdgpu/diagnostics/budget.py
 rmhdgpu/diagnostics/fullfield.py
 rmhdgpu/diagnostics/scalar.py
 rmhdgpu/diagnostics/spectra.py
@@ -45,8 +49,12 @@ rmhdgpu/profiling/benchmark_backends.py
 rmhdgpu/profiling/gpu_sanity.py
 rmhdgpu/profiling/profile_timestep.py
 rmhdgpu/tests/conftest.py
+rmhdgpu/tests/test_auto_dissipation.py
 rmhdgpu/tests/test_backend.py
+rmhdgpu/tests/test_budget_diagnostics.py
+rmhdgpu/tests/test_budget_vis.py
 rmhdgpu/tests/test_cupy_backend.py
+rmhdgpu/tests/test_diagnostic_output.py
 rmhdgpu/tests/test_dissipation.py
 rmhdgpu/tests/test_equations_s09.py
 rmhdgpu/tests/test_example_scripts.py
@@ -71,4 +79,5 @@ rmhdgpu/tests/test_smoke.py
 rmhdgpu/tests/test_state.py
 rmhdgpu/tests/test_steppers.py
 rmhdgpu/tests/test_variable_timestep.py
+rmhdgpu/tests/test_vis_scripts.py
 rmhdgpu/tests/test_workspace.py

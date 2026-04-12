@@ -10,12 +10,9 @@ import sys
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from matplotlib import cm, colors
 import numpy as np
+
+from vis._matplotlib import finalize_figure, import_pyplot
 
 
 def _read_spectra_csv(path: Path) -> dict[str, dict[float, tuple[np.ndarray, np.ndarray]]]:
@@ -56,12 +53,40 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--output-dir", default=None, help="Directory for PNG outputs.")
     parser.add_argument("--colormap", default="viridis", help="Matplotlib colormap name.")
-    parser.add_argument("--show", action="store_true", help="Show figures interactively after saving.")
+    parser.add_argument(
+        "--y-span-decades",
+        type=float,
+        default=7.0,
+        help=(
+            "Limit each plot to at most 10**N in y from the quantity's maximum. "
+            "Default: 7. Use 0 or a negative value to disable the limit."
+        ),
+    )
+    parser.add_argument(
+        "--show",
+        action="store_true",
+        help="Show figures interactively after saving. Useful from Spyder or IPython.",
+    )
     return parser
+
+
+def _guide_line(kperp: np.ndarray, values: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
+    valid = (kperp > 0.0) & (values > 0.0)
+    if np.count_nonzero(valid) < 2:
+        return None
+
+    k_plot = kperp[valid]
+    y_plot = values[valid]
+    anchor = len(k_plot) // 2
+    guide = y_plot[anchor] * (k_plot / k_plot[anchor]) ** (-5.0 / 3.0)
+    return k_plot, guide
 
 
 def main(argv: list[str] | None = None) -> list[Path]:
     args = build_parser().parse_args(argv)
+    plt = import_pyplot(show=args.show)
+    from matplotlib import cm, colors
+
     csv_path = Path(args.csv_path).expanduser().resolve()
     spectra = _read_spectra_csv(csv_path)
 
@@ -84,10 +109,20 @@ def main(argv: list[str] | None = None) -> list[Path]:
 
     for quantity in quantities:
         fig, ax = plt.subplots(figsize=(6.5, 4.8), constrained_layout=True)
+        ymax = 0.0
+        latest_time = max(spectra[quantity])
+        latest_curve = spectra[quantity][latest_time]
         for time_value in sorted(spectra[quantity]):
             kperp, values = spectra[quantity][time_value]
             mask = (kperp > 0.0) & (values > 0.0)
+            if np.any(mask):
+                ymax = max(ymax, float(np.max(values[mask])))
             ax.loglog(kperp[mask], values[mask], color=cmap(time_norm(time_value)), lw=2)
+
+        guide_line = _guide_line(*latest_curve)
+        if guide_line is not None:
+            guide_k, guide_y = guide_line
+            ax.loglog(guide_k, guide_y, color="0.55", ls=":", lw=1.6, label=r"$k^{-5/3}$ guide")
 
         sm = cm.ScalarMappable(norm=time_norm, cmap=cmap)
         colorbar = fig.colorbar(sm, ax=ax)
@@ -97,14 +132,14 @@ def main(argv: list[str] | None = None) -> list[Path]:
         ax.set_ylabel("value")
         ax.set_title(quantity)
         ax.grid(True, alpha=0.25)
+        if args.y_span_decades > 0.0 and ymax > 0.0:
+            ax.set_ylim(ymax / (10.0 ** args.y_span_decades), ymax)
+        if guide_line is not None:
+            ax.legend(fontsize=8)
 
         output_path = output_dir / f"{quantity}.png"
-        fig.savefig(output_path, dpi=160)
-        print(f"Saved {output_path}")
+        finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)
         saved_paths.append(output_path)
-        if args.show:
-            plt.show()
-        plt.close(fig)
 
     return saved_paths
 

@@ -13,6 +13,8 @@ fluctuation amplitudes
 
 so the controller uses the same quadratic modal density as the solver's saved
 `total_energy` diagnostic rather than raw `|phi_hat|^2` or `|psi_hat|^2`.
+That includes the same compressive-sector weights used by the S09 budget
+diagnostics.
 
 Around `k_d`, the controller defines a logarithmic shell
 

@@ -10,7 +10,25 @@ using the package-wide conventions:
 - `inv_lap_perp(f_hat) = -inv_kperp2 f_hat`
 
 The evolved fields are `[psi, omega, upar, dbpar, s]`, with the derived
-potential `phi = inv_lap_perp(omega)`.
+potential `phi = inv_lap_perp(omega)`. The homogeneous equations solved here
+are
+
+- `psi_t = vA * dz(phi) - {phi, psi}`
+- `omega_t = vA * dz(lap_perp psi) - {phi, omega} + {psi, lap_perp psi}`
+- `dbpar_t = alpha * dz(upar) - {phi, dbpar} + alpha * {psi, upar}`
+- `upar_t = vA^2 * dz(dbpar) - {phi, upar} + vA^2 * {psi, dbpar}`
+- `s_t = -{phi, s}`
+
+with `alpha = chi / (1 + chi)` and `chi = cs2_over_vA2 = cs^2 / vA^2`.
+
+The saved total-energy diagnostic uses the intended S09 code-variable
+normalization
+
+`E = 0.5 * (|grad_perp phi|^2 + |grad_perp psi|^2 + |upar|^2
+            + alpha^(-1) |dbpar|^2
+            + [chi / (gamma^2 (gamma - 1))] |s|^2)`
+
+with the diagnostic adiabatic index fixed to `gamma = 5/3`.
 """
 
 from __future__ import annotations
@@ -25,6 +43,7 @@ from rmhdgpu.state import State
 
 
 FIELD_NAMES = ["psi", "omega", "upar", "dbpar", "s"]
+DIAGNOSTIC_GAMMA = 5.0 / 3.0
 _MODAL_WEIGHTS_CACHE: dict[tuple[str, int, int, int, str], Any] = {}
 
 
@@ -39,6 +58,31 @@ def alpha_from_params(params: Any) -> float:
 
     chi = _get_param(params, "cs2_over_vA2")
     return chi / (1.0 + chi)
+
+
+def chi_from_params(params: Any) -> float:
+    """Return `chi = cs^2 / vA^2` from the supplied parameter object."""
+
+    return _get_param(params, "cs2_over_vA2")
+
+
+def _diagnostic_energy_weights(params: Any) -> tuple[float, float]:
+    """Return the compressive-sector weights used by the saved S09 energy.
+
+    The Alfvénic pieces are always measured through
+
+    - `u_perp ~ grad_perp phi`
+    - `b_perp ~ grad_perp psi`
+
+    so only the compressive weights need explicit parameter-dependent factors
+    here. The entropy contribution uses a fixed diagnostic `gamma = 5/3`.
+    """
+
+    alpha = alpha_from_params(params)
+    chi = chi_from_params(params)
+    dbpar_weight = 1.0 / alpha
+    entropy_weight = chi / (DIAGNOSTIC_GAMMA**2 * (DIAGNOSTIC_GAMMA - 1.0))
+    return dbpar_weight, entropy_weight
 
 
 def derive_phi_hat(omega_hat: Any, grid: Any) -> Any:
@@ -105,30 +149,37 @@ def total_energy_modal_density(state: State, grid: Any, backend: Any, params: An
     `u_perp ~ grad_perp phi` and `b_perp ~ grad_perp psi`, so the density uses
     `k_perp^2 |phi_hat|^2` and `k_perp^2 |psi_hat|^2` rather than raw
     `|phi_hat|^2` or `|psi_hat|^2`.
+
+    In code variables the quadratic form is
+
+    `E = 0.5 * (k_perp^2 |phi_hat|^2 + k_perp^2 |psi_hat|^2 + |upar_hat|^2`
+    `           + alpha^(-1) |dbpar_hat|^2`
+    `           + [chi / (gamma^2 (gamma - 1))] |s_hat|^2)`
+
+    with `gamma = 5/3`.
     """
 
     xp = backend.xp
-    alpha = alpha_from_params(params)
-    vA = _get_param(params, "vA")
+    dbpar_weight, entropy_weight = _diagnostic_energy_weights(params)
     phi_hat = derive_phi_hat(state["omega"], grid)
     return (
         0.5 * grid.kperp2 * (xp.abs(phi_hat) ** 2 + xp.abs(state["psi"]) ** 2)
-        + 0.5 * (alpha / (vA**2)) * xp.abs(state["upar"]) ** 2
-        + 0.5 * xp.abs(state["dbpar"]) ** 2
-        + 0.5 * xp.abs(state["s"]) ** 2
+        + 0.5 * xp.abs(state["upar"]) ** 2
+        + 0.5 * dbpar_weight * xp.abs(state["dbpar"]) ** 2
+        + 0.5 * entropy_weight * xp.abs(state["s"]) ** 2
     )
 
 
 def total_energy(state: State, grid: Any, backend: Any, params: Any) -> float:
     """Return the conserved quadratic energy of the five-field homogeneous system.
 
-    The compressive linear subsystem obeys
+    This uses the intended S09 diagnostic normalization in code variables:
 
-    `dbpar_t = alpha * dz(upar)`
-    `upar_t = vA^2 * dz(dbpar)`
+    `E = 0.5 * (|grad_perp phi|^2 + |grad_perp psi|^2 + |upar|^2`
+    `           + alpha^(-1) |dbpar|^2`
+    `           + [chi / (gamma^2 (gamma - 1))] |s|^2)`
 
-    so the conserved quadratic form weights `upar` by `alpha / vA^2` rather
-    than by unity.
+    with `gamma = 5/3`.
     """
 
     density_hat = total_energy_modal_density(state, grid, backend, params)
@@ -149,19 +200,20 @@ def total_energy_dissipation_rhs(
     `d_t E = forcing + other_terms + dissipation`
 
     so this term is negative when the diagonal damping operators remove
-    energy from the state.
+    energy from the state. The weighting matches :func:`total_energy`
+    exactly, including the `alpha^(-1)` factor for `dbpar` and the fixed
+    entropy prefactor `chi / (gamma^2 (gamma - 1))` with `gamma = 5/3`.
     """
 
     xp = backend.xp
-    alpha = alpha_from_params(params)
-    vA = _get_param(params, "vA")
+    dbpar_weight, entropy_weight = _diagnostic_energy_weights(params)
     phi_hat = derive_phi_hat(state["omega"], grid)
     density_hat = (
         -linear_ops["omega"] * grid.kperp2 * (xp.abs(phi_hat) ** 2)
         - linear_ops["psi"] * grid.kperp2 * (xp.abs(state["psi"]) ** 2)
-        - (alpha / (vA**2)) * linear_ops["upar"] * xp.abs(state["upar"]) ** 2
-        - linear_ops["dbpar"] * xp.abs(state["dbpar"]) ** 2
-        - linear_ops["s"] * xp.abs(state["s"]) ** 2
+        - linear_ops["upar"] * xp.abs(state["upar"]) ** 2
+        - dbpar_weight * linear_ops["dbpar"] * xp.abs(state["dbpar"]) ** 2
+        - entropy_weight * linear_ops["s"] * xp.abs(state["s"]) ** 2
     )
     return _modal_average(density_hat, grid, backend)
 

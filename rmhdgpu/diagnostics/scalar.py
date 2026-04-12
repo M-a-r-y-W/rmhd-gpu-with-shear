@@ -55,8 +55,9 @@ def compute_energy_diagnostics(
     - `dbpar_energy = 0.5 <dbpar^2>`
     - `entropy_variance = 0.5 <s^2>`
     - `total_energy_proxy`, the simple unweighted sum of the above pieces
-    - `total_energy`, the conserved quadratic form of the current five-field
-      system, with the `upar` contribution weighted by `alpha / vA^2`
+    - `total_energy`, the corrected S09 quadratic form with
+      `upar -> 0.5 <upar^2>`, `dbpar -> 0.5 alpha^(-1) <dbpar^2>`, and
+      `s -> 0.5 [chi / (gamma^2 (gamma - 1))] <s^2>` for `gamma = 5/3`
     """
 
     xp = backend.xp

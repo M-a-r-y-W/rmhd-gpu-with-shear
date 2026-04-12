@@ -1,2 +1,4 @@
 .venv/*
 .venv-local/*
+sanity_plots/*
+quick_tests/*

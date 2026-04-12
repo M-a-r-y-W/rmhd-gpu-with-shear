@@ -27,11 +27,9 @@ import sys
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
+
+from vis._matplotlib import finalize_figure, import_pyplot
 
 
 def _read_scalar_csv(path: Path) -> tuple[list[str], dict[str, np.ndarray]]:
@@ -70,12 +68,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Conserved quantity name prefix, for example `total_energy`.",
     )
     parser.add_argument("--output", default=None, help="Output image path. Defaults next to the CSV file.")
-    parser.add_argument("--show", action="store_true", help="Show the figure interactively after saving.")
+    parser.add_argument(
+        "--show",
+        action="store_true",
+        help="Show the figure interactively after saving. Useful from Spyder or IPython.",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> Path:
     args = build_parser().parse_args(argv)
+    plt = import_pyplot(show=args.show)
     csv_path = Path(args.csv_path).expanduser().resolve()
     fieldnames, columns = _read_scalar_csv(csv_path)
     time_key = "time" if "time" in columns else "t"
@@ -148,11 +151,7 @@ def main(argv: list[str] | None = None) -> Path:
     axes[1].grid(True, alpha=0.3)
     axes[1].legend(fontsize=8)
 
-    fig.savefig(output_path, dpi=160)
-    print(f"Saved {output_path}")
-    if args.show:
-        plt.show()
-    plt.close(fig)
+    finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)
     return output_path
 
 

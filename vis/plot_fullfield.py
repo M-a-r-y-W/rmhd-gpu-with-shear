@@ -9,11 +9,9 @@ import sys
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
+
+from vis._matplotlib import finalize_figure, import_pyplot
 
 try:
     import h5py
@@ -93,13 +91,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--output-dir", default=None, help="Directory for PNG outputs.")
     parser.add_argument("--cmap", default="RdBu_r", help="Matplotlib colormap name.")
-    parser.add_argument("--show", action="store_true", help="Show figures interactively after saving.")
+    parser.add_argument(
+        "--show",
+        action="store_true",
+        help="Show figures interactively after saving. Useful from Spyder or IPython.",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> list[Path]:
     _require_h5py()
     args = build_parser().parse_args(argv)
+    plt = import_pyplot(show=args.show)
     input_path = Path(args.input_path).expanduser().resolve()
     snapshot_files = _resolve_input_files(input_path)
     if args.indices is not None:
@@ -168,12 +171,8 @@ def main(argv: list[str] | None = None) -> list[Path]:
         ax.set_title(f"{args.field} {args.slice_dir}={slice_index}, t={time_value:.3f}, step={step_value}")
 
         output_path = output_dir / f"{args.field}_{args.slice_dir}_{key}.png"
-        fig.savefig(output_path, dpi=160)
-        print(f"Saved {output_path}")
+        finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)
         saved_paths.append(output_path)
-        if args.show:
-            plt.show()
-        plt.close(fig)
 
     return saved_paths
 
