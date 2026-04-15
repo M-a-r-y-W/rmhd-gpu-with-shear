@@ -56,6 +56,7 @@ rmhdgpu/tests/test_budget_vis.py
 rmhdgpu/tests/test_cupy_backend.py
 rmhdgpu/tests/test_diagnostic_output.py
 rmhdgpu/tests/test_dissipation.py
+rmhdgpu/tests/test_energy_normalization.py
 rmhdgpu/tests/test_equations_s09.py
 rmhdgpu/tests/test_example_scripts.py
 rmhdgpu/tests/test_fft.py

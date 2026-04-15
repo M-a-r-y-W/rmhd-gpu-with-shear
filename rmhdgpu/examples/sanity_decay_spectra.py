@@ -41,9 +41,9 @@ from rmhdgpu.examples.frame_output import (
 )
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
+from rmhdgpu.initconds import build_initial_state
 from rmhdgpu.masks import build_dealias_mask
-from rmhdgpu.operators import dx, dy, lap_perp
-from rmhdgpu.state import State
+from rmhdgpu.operators import dx, dy
 from rmhdgpu.steppers import compute_cfl_timestep, if_ssprk3_step
 from rmhdgpu.workspace import Workspace
 
@@ -68,32 +68,6 @@ def estimate_hyperdiffusion_coefficient(k_d: float, k0: float, u_rms: float, ord
     """
 
     return k_d * u_rms * (k_d / k0) ** (-1.0 / 3.0) / (k_d ** (2 * order))
-
-
-def _low_mode_real_field(
-    grid: object,
-    backend: object,
-    seed: int,
-    amplitude: float,
-) -> object:
-    rng = np.random.default_rng(seed)
-    xp = backend.xp
-    x = grid.x.reshape(grid.Nx, 1, 1)
-    y = grid.y.reshape(1, grid.Ny, 1)
-    z = grid.z.reshape(1, 1, grid.Nz)
-    field = backend.zeros(grid.real_shape, dtype=grid.real_dtype)
-
-    for nx in range(1, 4):
-        for ny in range(1, 4):
-            for nz in range(1, 4):
-                a_cos = rng.normal(scale=amplitude / 6.0)
-                a_sin = rng.normal(scale=amplitude / 6.0)
-                phase = nx * x + ny * y + nz * z
-                field += a_cos * xp.cos(phase) + a_sin * xp.sin(phase)
-
-    return field.astype(grid.real_dtype, copy=False)
-
-
 def _initial_u_rms(phi_hat: object, grid: object, fft: FFTManager, backend: object) -> float:
     ux = -fft.c2r(dy(phi_hat, grid))
     uy = fft.c2r(dx(phi_hat, grid))
@@ -242,15 +216,16 @@ def main() -> None:
         },
     )
 
-    state = State(grid, backend, field_names=config.field_names)
-    phi_hat = fft.r2c(_low_mode_real_field(grid, backend, seed=1, amplitude=0.4)) * mask
-    psi_hat = fft.r2c(_low_mode_real_field(grid, backend, seed=2, amplitude=0.3)) * mask
-    state["psi"][...] = psi_hat
-    state["omega"][...] = lap_perp(phi_hat, grid)
-    state["upar"][...] = fft.r2c(_low_mode_real_field(grid, backend, seed=3, amplitude=0.08)) * mask
-    state["dbpar"][...] = fft.r2c(_low_mode_real_field(grid, backend, seed=4, amplitude=0.06)) * mask
-    state["s"][...] = fft.r2c(_low_mode_real_field(grid, backend, seed=5, amplitude=0.05)) * mask
-
+    state = build_initial_state(
+        "decaying_low_modes",
+        grid=grid,
+        backend=backend,
+        fft=fft,
+        dealias_mask=mask,
+        field_names=config.field_names,
+        params=config,
+    )
+    phi_hat = s09.derive_phi_hat(state["omega"], grid)
     u_rms = _initial_u_rms(phi_hat, grid, fft, backend)
     k0 = 1.0
     kperp_max_dealiased = dealiased_max_kperp(grid, backend, mask)

@@ -143,6 +143,61 @@ type = "zero"
     assert settings.initial_condition.type == "zero"
 
 
+def test_initial_condition_parameter_table_parses_and_overrides_defaults(tmp_path) -> None:
+    input_file = tmp_path / "initcond_parameters.input"
+    input_file.write_text(
+        """
+[grid]
+Nx = 8
+Ny = 8
+Nz = 8
+
+[initial_condition]
+type = "decaying_low_modes"
+phi_seed = 9
+
+[initial_condition.parameters]
+psi_seed = 22
+psi_amplitude = 0.125
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    settings = resolve_run_settings(runfile_path=input_file)
+
+    assert settings.initial_condition.type == "decaying_low_modes"
+    assert settings.initial_condition.parameters["phi_seed"] == 9
+    assert settings.initial_condition.parameters["psi_seed"] == 22
+    assert settings.initial_condition.parameters["psi_amplitude"] == 0.125
+    assert settings.initial_condition.parameters["s_seed"] == 5
+
+
+def test_unknown_initial_condition_in_runfile_gives_helpful_error(tmp_path) -> None:
+    input_file = tmp_path / "bad_initcond.input"
+    input_file.write_text(
+        """
+[grid]
+Nx = 8
+Ny = 8
+Nz = 8
+
+[initial_condition]
+type = "not_a_real_initcond"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        resolve_run_settings(runfile_path=input_file)
+
+    message = str(excinfo.value)
+    assert "Unknown initial condition type 'not_a_real_initcond'" in message
+    for name in ("zero", "alfven_mode", "aw_packet", "decaying_low_modes"):
+        assert name in message
+
+
 def test_input_file_output_section_parses(tmp_path) -> None:
     input_file = tmp_path / "outputs.input"
     input_file.write_text(

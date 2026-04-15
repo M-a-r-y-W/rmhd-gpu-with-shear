@@ -1,9 +1,10 @@
-"""Placeholder mode initializers used mainly for FFT indexing tests."""
+"""Small testing-oriented Fourier mode helpers."""
 
 from __future__ import annotations
 
-import numpy as np
 from typing import Any
+
+import numpy as np
 
 
 def single_mode_field(
@@ -13,19 +14,7 @@ def single_mode_field(
     amplitude: float = 1.0,
     phase: float = 0.0,
 ) -> Any:
-    """Return a Fourier field with one stored `rfftn` mode populated.
-
-    Parameters
-    ----------
-    mode_indices:
-        Physical integer mode numbers `(n_x, n_y, n_z)`. The `z` mode must lie
-        in the stored nonnegative range `0 <= n_z <= Nz//2`.
-
-    Notes
-    -----
-    This is a placeholder testing utility for FFT indexing, not a physical
-    eigenmode initializer.
-    """
+    """Return a Fourier field with one stored `rfftn` mode populated."""
 
     nx, ny, nz = mode_indices
     if nz < 0 or nz > (grid.Nz // 2):
@@ -40,4 +29,3 @@ def single_mode_field(
     iy = ny % grid.Ny
     field_hat[ix, iy, nz] = coeff
     return field_hat
-

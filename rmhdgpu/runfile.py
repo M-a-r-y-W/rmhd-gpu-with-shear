@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import argparse
 import math
-import tomllib
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
 from rmhdgpu.config import Config, default_config_dict
+from rmhdgpu.initconds import normalize_initial_condition_parameters
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib
 
 
 PRIMARY_INPUT_SUFFIX = ".input"
@@ -49,22 +54,6 @@ _SECTION_KEYS = {
     "runtime": {"runtime_check_every", "progress_output_every", "fail_on_nonfinite", "dealias", "dealias_mode"},
     "physics": {"vA", "cs2_over_vA2"},
     "forcing": {"use_forcing", "n_min_force", "n_max_force", "alpha_force", "forcing_seed", "force_amplitudes"},
-    "initial_condition": {
-        "type",
-        "k_indices",
-        "amplitude",
-        "branch",
-        "phi_seed",
-        "phi_amplitude",
-        "psi_seed",
-        "psi_amplitude",
-        "upar_seed",
-        "upar_amplitude",
-        "dbpar_seed",
-        "dbpar_amplitude",
-        "s_seed",
-        "s_amplitude",
-    },
 }
 _AUTO_DISSIPATION_KEYS = {
     "mode",
@@ -95,87 +84,47 @@ class InitialConditionSpec:
     """Driver-level initial-condition selection."""
 
     type: str = "alfven_mode"
-    k_indices: tuple[int, int, int] = (1, 1, 1)
-    amplitude: float = 1.0
-    branch: str = "plus"
     parameters: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_document(cls, data: dict[str, Any] | None) -> "InitialConditionSpec":
         if data is None:
-            return cls(parameters={})
+            return cls(
+                type="alfven_mode",
+                parameters=normalize_initial_condition_parameters("alfven_mode", {}),
+            )
         if not isinstance(data, dict):
             raise ValueError("initial_condition must be a TOML table.")
 
-        unexpected = sorted(set(data) - _SECTION_KEYS["initial_condition"])
-        if unexpected:
-            raise ValueError(f"initial_condition has unexpected keys: {unexpected}.")
-
         kind = str(data.get("type", "alfven_mode"))
-        raw_k = data.get("k_indices", [1, 1, 1])
-        if not isinstance(raw_k, list) or len(raw_k) != 3:
-            raise ValueError("initial_condition.k_indices must be an array of three integers.")
-        k_indices = tuple(int(value) for value in raw_k)
-        amplitude = float(data.get("amplitude", 1.0))
-        branch = str(data.get("branch", "plus"))
-        parameters = {
-            key: value
-            for key, value in data.items()
-            if key
-            not in {
-                "type",
-                "k_indices",
-                "amplitude",
-                "branch",
-            }
-        }
+        parameters_table = data.get("parameters")
+        if parameters_table is not None and not isinstance(parameters_table, dict):
+            raise ValueError("initial_condition.parameters must be a TOML table.")
 
-        spec = cls(type=kind, k_indices=k_indices, amplitude=amplitude, branch=branch, parameters=parameters)
-        spec.validate()
-        return spec
-
-    def validate(self) -> None:
-        if self.parameters is None:
-            self.parameters = {}
-        if self.type not in {"alfven_mode", "zero", "aw_packet", "decaying_low_modes"}:
-            raise ValueError(
-                "initial_condition.type must be 'alfven_mode', 'zero', 'aw_packet', or "
-                f"'decaying_low_modes'; got {self.type!r}."
-            )
-        if self.type == "alfven_mode":
-            if len(self.k_indices) != 3:
-                raise ValueError("initial_condition.k_indices must contain exactly three entries.")
-            for index, value in enumerate(self.k_indices):
-                if not isinstance(value, int):
-                    raise ValueError(
-                        f"initial_condition.k_indices[{index}] must be an integer; got {value!r}."
-                    )
-                if value < 0:
-                    raise ValueError(
-                        f"initial_condition.k_indices[{index}] must be nonnegative; got {value!r}."
-                    )
-            if self.amplitude <= 0.0:
-                raise ValueError(f"initial_condition.amplitude must be positive; got {self.amplitude!r}.")
-            if self.branch not in {"plus", "minus"}:
+        direct_parameters: dict[str, Any] = {}
+        for key, value in data.items():
+            if key in {"type", "parameters"}:
+                continue
+            if isinstance(value, dict):
                 raise ValueError(
-                    f"initial_condition.branch must be 'plus' or 'minus'; got {self.branch!r}."
+                    f"initial_condition.{key} must not be a nested table. "
+                    "Use [initial_condition.parameters] for initializer-specific options."
                 )
-        if self.type == "decaying_low_modes":
-            for key, value in self.parameters.items():
-                if key.endswith("_seed"):
-                    int(value)
-                if key.endswith("_amplitude") and float(value) <= 0.0:
-                    raise ValueError(f"initial_condition.{key} must be positive; got {value!r}.")
+            direct_parameters[key] = deepcopy(value)
+
+        merged_parameters = direct_parameters
+        if parameters_table is not None:
+            merged_parameters.update(deepcopy(parameters_table))
+
+        return cls(
+            type=kind,
+            parameters=normalize_initial_condition_parameters(kind, merged_parameters),
+        )
 
     def to_document(self) -> dict[str, Any]:
-        document = {
-            "type": self.type,
-        }
-        if self.type == "alfven_mode":
-            document["k_indices"] = list(self.k_indices)
-            document["amplitude"] = self.amplitude
-            document["branch"] = self.branch
-        document.update(dict(self.parameters))
+        document = {"type": self.type}
+        if self.parameters:
+            document["parameters"] = deepcopy(self.parameters)
         return document
 
 
@@ -245,6 +194,10 @@ def load_run_file(path: str | Path) -> dict[str, Any]:
         unexpected = sorted(set(section) - allowed_keys)
         if unexpected:
             raise ValueError(f"{section_name} has unexpected keys: {unexpected}.")
+
+    initial_condition = data.get("initial_condition")
+    if initial_condition is not None and not isinstance(initial_condition, dict):
+        raise ValueError("initial_condition must be a TOML table.")
 
     forcing = _require_table(data, "forcing")
     force_amplitudes = forcing.get("force_amplitudes", {})
@@ -352,15 +305,17 @@ def cli_overrides_from_args(args: argparse.Namespace) -> dict[str, Any]:
 
     initial_condition_map = {
         "initial_condition": "type",
-        "mode_amplitude": "amplitude",
-        "mode_branch": "branch",
     }
     for cli_key, config_key in initial_condition_map.items():
         if cli_key in values:
             _set_section("initial_condition", config_key, values[cli_key])
+    if "mode_amplitude" in values:
+        overrides.setdefault("initial_condition", {}).setdefault("parameters", {})["amplitude"] = values["mode_amplitude"]
+    if "mode_branch" in values:
+        overrides.setdefault("initial_condition", {}).setdefault("parameters", {})["branch"] = values["mode_branch"]
     mode_keys = ["mode_kx", "mode_ky", "mode_kz"]
     if any(key in values for key in mode_keys):
-        current = overrides.setdefault("initial_condition", {})
+        current = overrides.setdefault("initial_condition", {}).setdefault("parameters", {})
         existing = list(current.get("k_indices", [1, 1, 1]))
         for index, key in enumerate(mode_keys):
             if key in values:

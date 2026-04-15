@@ -2,9 +2,10 @@ Metadata-Version: 2.4
 Name: rmhdgpu
 Version: 0.1.0
 Summary: Foundation for a single-GPU Fourier pseudo-spectral RMHD-style code.
-Requires-Python: >=3.11
+Requires-Python: >=3.10
 Description-Content-Type: text/markdown
-Requires-Dist: numpy>=1.24
+Requires-Dist: numpy>=1.23
+Requires-Dist: tomli>=2.0.1; python_version < "3.11"
 Provides-Extra: dev
 Requires-Dist: pytest>=7.4; extra == "dev"
 
@@ -29,11 +30,16 @@ Current solver scope includes:
 
 ## Installation
 
+The package supports Python 3.10+.
+
 From the repository root, install the package in editable mode:
 
 ```bash
 python -m pip install -e .
 ```
+
+On Python 3.10, `pip` will also install `tomli` automatically so `.input` files
+continue to parse the same way.
 
 After that, `python -m rmhdgpu.run ...` works from any folder, not just from inside the repository checkout. That is the most convenient setup for case-directory workflows and for running on a remote cluster.
 
@@ -305,9 +311,12 @@ That can override the Conda environment and leave you running `/opt/spack/.../py
 
 ### Create the environment
 
+Any Python 3.10+ Conda environment is fine. The example below uses Python 3.10,
+which is the minimum supported version.
+
 ```bash
 mkdir -p ~/conda-envs
-conda create -y -p ~/conda-envs/curmpy python=3.11
+conda create -y -p ~/conda-envs/curmpy python=3.10
 conda activate ~/conda-envs/curmpy
 python -m pip install --upgrade pip
 python -m pip install numpy scipy matplotlib pytest h5py cupy

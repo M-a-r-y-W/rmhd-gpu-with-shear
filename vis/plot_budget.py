@@ -126,7 +126,7 @@ def main(argv: list[str] | None = None) -> Path:
         time,
         columns[rhs_total_name],
         lw=2.2,
-        color="tab:blue",
+        color="tab:blue",ls=':',
         label=rhs_total_name,
     )
     term_linestyles = ["--", ":", "-."]

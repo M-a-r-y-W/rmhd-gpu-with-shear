@@ -37,30 +37,10 @@ from rmhdgpu.examples.frame_output import (
 )
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
+from rmhdgpu.initconds import build_initial_state
 from rmhdgpu.masks import build_dealias_mask
-from rmhdgpu.operators import lap_perp
-from rmhdgpu.state import State
 from rmhdgpu.steppers import if_ssprk3_step
 from rmhdgpu.workspace import Workspace
-
-
-def _packet_real_field(grid: object, backend: object) -> object:
-    xp = backend.xp
-    x = grid.x.reshape(grid.Nx, 1, 1)
-    y = grid.y.reshape(1, grid.Ny, 1)
-    z = grid.z.reshape(1, 1, grid.Nz)
-    field = xp.zeros(grid.real_shape, dtype=grid.real_dtype)
-
-    for nx in range(1, 4):
-        for ny in range(1, 4):
-            for nz in range(1, 4):
-                coefficient = 0.15 / (nx + ny + nz - 1.0)
-                phase = 0.3 * (nx - ny + nz)
-                field += coefficient * xp.cos(nx * x + ny * y + nz * z + phase)
-
-    rms = backend.scalar_to_float(xp.sqrt(xp.mean(field**2)))
-    field *= 1.0 / rms
-    return field
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -86,12 +66,15 @@ def main() -> None:
     linear_ops = s09.build_dissipation_operators(grid, config)
     z_index = resolve_snapshot_z_index(grid, args.snapshot_z_index)
 
-    phi_real = _packet_real_field(grid, backend)
-    phi_hat = fft.r2c(phi_real) * mask
-
-    state = State(grid, backend, field_names=config.field_names)
-    state["psi"][...] = phi_hat
-    state["omega"][...] = lap_perp(phi_hat, grid)
+    state = build_initial_state(
+        "aw_packet",
+        grid=grid,
+        backend=backend,
+        fft=fft,
+        dealias_mask=mask,
+        field_names=config.field_names,
+        params=config,
+    )
 
     tau_A = grid.Lz / config.vA
     sample_times = np.arange(0.0, 0.51 * tau_A, 0.1 * tau_A)

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from rmhdgpu.run import main
 
 
@@ -66,18 +68,42 @@ def test_output_dir_defaults_relative_to_input_file(tmp_path, monkeypatch) -> No
     assert not (other_dir / "outputs" / "resolved_config.toml").exists()
 
 
-def test_example_runfile_executes_small_case(tmp_path) -> None:
+@pytest.mark.parametrize(
+    "example_name",
+    [
+        "aw_packet.input",
+        "decay_spectra.input",
+        "decay_spectra_auto.input",
+        "decay_spectra_gpu.input",
+        "forced_turbulence.input",
+    ],
+)
+def test_example_input_files_still_run(example_name: str, tmp_path) -> None:
     source = (
         Path(__file__).resolve().parents[2]
         / "examples"
-        / "forced_turbulence.input"
+        / example_name
     )
     case_dir = tmp_path / "example_case"
     case_dir.mkdir()
     input_file = case_dir / "input.input"
     input_file.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
 
-    main([str(input_file), "--tmax", "0.02", "--nx", "8", "--ny", "8", "--nz", "8"])
+    main(
+        [
+            str(input_file),
+            "--backend",
+            "numpy",
+            "--tmax",
+            "0.02",
+            "--nx",
+            "8",
+            "--ny",
+            "8",
+            "--nz",
+            "8",
+        ]
+    )
 
     output_dir = case_dir / "outputs"
     assert (output_dir / "resolved_config.toml").exists()

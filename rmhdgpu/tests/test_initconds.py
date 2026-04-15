@@ -6,8 +6,8 @@ from rmhdgpu.backend import build_backend
 from rmhdgpu.config import Config
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
-from rmhdgpu.initconds.eigenmodes_placeholder import single_mode_field
 from rmhdgpu.initconds.random_modes import random_band_limited_field
+from rmhdgpu.initconds.testing import single_mode_field
 from rmhdgpu.masks import build_dealias_mask
 
 

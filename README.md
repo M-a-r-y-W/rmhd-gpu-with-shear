@@ -19,11 +19,16 @@ Current solver scope includes:
 
 ## Installation
 
+The package supports Python 3.10+.
+
 From the repository root, install the package in editable mode:
 
 ```bash
 python -m pip install -e .
 ```
+
+On Python 3.10, `pip` will also install `tomli` automatically so `.input` files
+continue to parse the same way.
 
 After that, `python -m rmhdgpu.run ...` works from any folder, not just from inside the repository checkout. That is the most convenient setup for case-directory workflows and for running on a remote cluster.
 
@@ -207,10 +212,15 @@ Meaning of the main settings:
 
 Currently supported initial conditions are:
 
+- `initial_condition.type` selects a registered builder in `rmhdgpu.initconds`
+- put initializer-specific options under `[initial_condition.parameters]` (flat keys under `[initial_condition]` still work for compatibility)
 - `type = "alfven_mode"` with `k_indices = [kx, ky, kz]`, `amplitude`, and `branch = "plus"` or `"minus"`
 - `type = "zero"`
 - `type = "aw_packet"`
 - `type = "decaying_low_modes"`
+
+Adding a new initial condition means adding and registering a builder in
+`rmhdgpu.initconds`.
 
 ## Example Inputs
 
@@ -295,9 +305,12 @@ That can override the Conda environment and leave you running `/opt/spack/.../py
 
 ### Create the environment
 
+Any Python 3.10+ Conda environment is fine. The example below uses Python 3.10,
+which is the minimum supported version.
+
 ```bash
 mkdir -p ~/conda-envs
-conda create -y -p ~/conda-envs/curmpy python=3.11
+conda create -y -p ~/conda-envs/curmpy python=3.10
 conda activate ~/conda-envs/curmpy
 python -m pip install --upgrade pip
 python -m pip install numpy scipy matplotlib pytest h5py cupy

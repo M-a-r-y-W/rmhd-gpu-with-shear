@@ -23,11 +23,11 @@ from rmhdgpu.diagnostics.budget import flatten_conserved_quantity_budgets
 from rmhdgpu.diagnostics.spectra import perpendicular_energy_spectrum_from_state
 from rmhdgpu.diagnostics.scalar import compute_energy_diagnostics, compute_scalar_diagnostics
 from rmhdgpu.errors import NonFiniteStateError
-from rmhdgpu.example_setups import build_initial_state
 from rmhdgpu.equations import s09
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.forcing import apply_forcing_kick, generate_forcing_kick
 from rmhdgpu.grid import build_grid
+from rmhdgpu.initconds import build_initial_state, list_initial_condition_types
 from rmhdgpu.masks import build_dealias_mask
 from rmhdgpu.output import (
     FULLFIELD_DIAGNOSTICS_DIRNAME,
@@ -137,7 +137,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--initial-condition",
-        choices=["alfven_mode", "zero"],
+        choices=list_initial_condition_types(),
         default=argparse.SUPPRESS,
         help="Initial condition family for CLI mode or run-file override.",
     )

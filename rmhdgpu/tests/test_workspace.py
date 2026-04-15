@@ -4,7 +4,7 @@ from rmhdgpu.backend import build_backend
 from rmhdgpu.config import Config
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
-from rmhdgpu.initconds.eigenmodes_placeholder import single_mode_field
+from rmhdgpu.initconds.testing import single_mode_field
 from rmhdgpu.operators import poisson_bracket
 from rmhdgpu.workspace import Workspace
 
@@ -34,4 +34,3 @@ def test_poisson_bracket_can_use_workspace_buffers() -> None:
 
     assert result.shape == grid.fourier_shape
     assert result.dtype == grid.complex_dtype
-

@@ -8,8 +8,8 @@ from rmhdgpu.config import Config
 from rmhdgpu.equations import s09
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
-from rmhdgpu.initconds.eigenmodes_placeholder import single_mode_field
 from rmhdgpu.initconds.random_modes import random_band_limited_field
+from rmhdgpu.initconds.testing import single_mode_field
 from rmhdgpu.masks import build_dealias_mask
 from rmhdgpu.state import State
 from rmhdgpu.steppers import if_ssprk3_step, ssprk3_step

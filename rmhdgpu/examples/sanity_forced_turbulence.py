@@ -43,8 +43,8 @@ from rmhdgpu.examples.frame_output import (
 )
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
+from rmhdgpu.initconds import build_initial_state
 from rmhdgpu.masks import build_dealias_mask
-from rmhdgpu.state import State
 from rmhdgpu.steppers import evolve_until
 from rmhdgpu.workspace import Workspace
 
@@ -269,7 +269,15 @@ def main() -> None:
         "dealias_mask": mask,
     }
 
-    current = State(grid, backend, field_names=config.field_names)
+    current = build_initial_state(
+        "zero",
+        grid=grid,
+        backend=backend,
+        fft=fft,
+        dealias_mask=mask,
+        field_names=config.field_names,
+        params=config,
+    )
     forcing_rng = backend.random_generator(config.forcing_seed)
     sample_times = np.linspace(0.0, config.tmax, 8)
     frame_times = build_frame_times(config.tmax, args.frame_count) if args.save_frames else np.empty(0, dtype=np.float64)
