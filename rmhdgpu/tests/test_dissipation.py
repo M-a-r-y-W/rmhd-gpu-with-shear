@@ -8,8 +8,9 @@ from rmhdgpu.config import Config
 from rmhdgpu.equations import s09
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
-from rmhdgpu.initconds.random_modes import random_band_limited_field
+from rmhdgpu.initconds import build_initial_state
 from rmhdgpu.initconds.testing import single_mode_field
+from rmhdgpu.initconds.testing import decaying_low_modes_test_parameters
 from rmhdgpu.masks import build_dealias_mask
 from rmhdgpu.state import State
 from rmhdgpu.steppers import if_ssprk3_step, ssprk3_step
@@ -101,19 +102,16 @@ def test_zero_dissipation_reduces_to_ideal() -> None:
     config = Config(Nx=8, Ny=8, Nz=8, backend="numpy")
     backend, grid, fft, workspace, mask = _build_context(config)
     linear_ops = s09.build_dissipation_operators(grid, config)
-    state = State(grid, backend, field_names=config.field_names)
-
-    for offset, name in enumerate(state.field_names):
-        state[name][...] = random_band_limited_field(
-            grid=grid,
-            backend=backend,
-            fft=fft,
-            kmin=1.0,
-            kmax=3.0,
-            seed=200 + offset,
-            rms=0.1,
-            dealias_mask=mask,
-        )
+    state = build_initial_state(
+        "decaying_low_modes",
+        parameters=decaying_low_modes_test_parameters(0.1),
+        grid=grid,
+        backend=backend,
+        fft=fft,
+        dealias_mask=mask,
+        field_names=config.field_names,
+        params=config,
+    )
 
     rhs_kwargs = {
         "grid": grid,
@@ -123,7 +121,7 @@ def test_zero_dissipation_reduces_to_ideal() -> None:
         "dealias_mask": mask,
     }
 
-    ideal_step = ssprk3_step(state, 0.02, s09.rhs, rhs_kwargs=rhs_kwargs)
+    ideal_step = ssprk3_step(state, 0.02, s09.ideal_rhs, rhs_kwargs=rhs_kwargs)
     if_step = if_ssprk3_step(state, 0.02, s09.ideal_rhs, linear_ops, rhs_kwargs=rhs_kwargs)
 
     for name in state.field_names:

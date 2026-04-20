@@ -18,12 +18,11 @@ from rmhdgpu.auto_dissipation import (
     disabled_auto_dissipation_diagnostics,
 )
 from rmhdgpu.backend import build_backend
-from rmhdgpu.diagnostics.alfvenic import alfvenic_cross_helicity, alfvenic_energy
 from rmhdgpu.diagnostics.budget import flatten_conserved_quantity_budgets
 from rmhdgpu.diagnostics.spectra import perpendicular_energy_spectrum_from_state
 from rmhdgpu.diagnostics.scalar import compute_energy_diagnostics, compute_scalar_diagnostics
 from rmhdgpu.errors import NonFiniteStateError
-from rmhdgpu.equations import s09
+from rmhdgpu.equations import available_equation_sets, get_equation_module
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.forcing import apply_forcing_kick, generate_forcing_kick
 from rmhdgpu.grid import build_grid
@@ -49,7 +48,9 @@ from rmhdgpu.runfile import (
     resolve_run_settings,
     write_resolved_config,
 )
+from rmhdgpu.state import State
 from rmhdgpu.steppers import compute_cfl_timestep, if_ssprk3_step
+import rmhdgpu.operators as operators
 from rmhdgpu.utils import check_state_finite
 from rmhdgpu.workspace import Workspace
 
@@ -98,6 +99,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--title", default=argparse.SUPPRESS)
     parser.add_argument("--output-dir", default=argparse.SUPPRESS)
+    parser.add_argument(
+        "--equation-set",
+        dest="equation_set",
+        choices=available_equation_sets(),
+        default=argparse.SUPPRESS,
+        help="Equation set to run. Usually set in [equations] type = ... in the input file.",
+    )
+    parser.add_argument(
+        "--equation-mode",
+        dest="equation_mode",
+        choices=["nonlinear", "linear"],
+        default=argparse.SUPPRESS,
+        help="RHS mode. `linear` keeps only equation-module linear terms; default is `nonlinear`.",
+    )
 
     parser.add_argument("--backend", choices=["numpy", "scipy_cpu", "cupy"], default=argparse.SUPPRESS)
     parser.add_argument("--fft-workers", type=int, default=argparse.SUPPRESS)
@@ -127,6 +142,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--vA", type=float, default=argparse.SUPPRESS)
     parser.add_argument("--cs2-over-vA2", dest="cs2_over_vA2", type=float, default=argparse.SUPPRESS)
+    parser.add_argument("--N2", type=float, default=argparse.SUPPRESS)
 
     parser.add_argument("--use-forcing", action=argparse.BooleanOptionalAction, default=argparse.SUPPRESS)
     parser.add_argument("--force-sigma", type=float, default=argparse.SUPPRESS)
@@ -186,6 +202,8 @@ def _startup_metadata(settings: RunSettings, output_dir: Path) -> dict[str, Any]
         "input_file": None if settings.input_file is None else str(settings.input_file),
         "output_dir": str(output_dir),
         "backend": settings.config.backend,
+        "equation_set": settings.config.equation_set,
+        "equation_mode": settings.config.equation_mode,
         "grid": [settings.config.Nx, settings.config.Ny, settings.config.Nz],
         "output_cadences": {
             "scalar": settings.config.t_out_scal,
@@ -210,6 +228,7 @@ def _diagnostics_row(
     backend: Any,
     params: Any,
     workspace: Any,
+    equation_module: Any,
     budget_rhs_terms: dict[str, dict[str, float]] | None = None,
     extra_scalar_diagnostics: dict[str, float] | None = None,
 ) -> dict[str, float | int]:
@@ -219,17 +238,30 @@ def _diagnostics_row(
         "dt": dt,
     }
     row.update(compute_scalar_diagnostics(state, grid, fft, backend, workspace=workspace))
-    row.update(compute_energy_diagnostics(state, grid, fft, backend, params, workspace=workspace))
-    row["alfvenic_cross_helicity"] = alfvenic_cross_helicity(state, grid, fft)
+    row.update(
+        compute_energy_diagnostics(
+            state,
+            grid,
+            fft,
+            backend,
+            params,
+            workspace=workspace,
+            equation_module=equation_module,
+        )
+    )
+    budgets = equation_module.compute_conserved_quantity_budgets(
+        state,
+        grid=grid,
+        backend=backend,
+        params=params,
+    )
+    if budget_rhs_terms is not None:
+        for quantity_name, rhs_terms in budget_rhs_terms.items():
+            budgets.setdefault(quantity_name, {"value": 0.0, "rhs_terms": {}})
+            budgets[quantity_name]["rhs_terms"] = dict(rhs_terms)
     row.update(
         flatten_conserved_quantity_budgets(
-            s09.compute_conserved_quantity_budgets(
-                state,
-                grid=grid,
-                backend=backend,
-                params=params,
-                extra_rhs_terms=budget_rhs_terms,
-            )
+            budgets
         )
     )
     if extra_scalar_diagnostics is not None:
@@ -237,13 +269,41 @@ def _diagnostics_row(
     return row
 
 
+def _zero_poisson_bracket(
+    f_hat: Any,
+    g_hat: Any,
+    grid: Any,
+    fft: Any,
+    workspace: Any,
+    mask: Any | None = None,
+    out: Any | None = None,
+) -> Any:
+    """Return a zero bracket with the same call signature as `poisson_bracket`."""
+
+    if out is None:
+        out = workspace.complex["c0"] if workspace is not None else f_hat * 0.0
+    out[...] = 0.0
+    return out
+
+
 def run_simulation(settings: RunSettings) -> dict[str, Any]:
     """Run one resolved case and write standard outputs."""
 
     config = settings.config
+    equation_module = get_equation_module(config.equation_set)
+    rhs_func = equation_module.ideal_rhs
+    original_operator_poisson_bracket = operators.poisson_bracket
+    module_had_poisson_bracket = hasattr(equation_module, "poisson_bracket")
+    original_module_poisson_bracket = getattr(equation_module, "poisson_bracket", None)
+    poisson_bracket_overridden = False
     output_dir = _prepare_output_dir(settings)
     logger = _open_run_logger(output_dir)
     try:
+        if config.equation_mode == "linear":
+            operators.poisson_bracket = _zero_poisson_bracket
+            setattr(equation_module, "poisson_bracket", _zero_poisson_bracket)
+            poisson_bracket_overridden = True
+
         write_resolved_config(settings, output_dir / "resolved_config.toml")
         _write_input_copy(settings, output_dir)
 
@@ -254,6 +314,8 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
                 "resolved_output_dir": str(output_dir),
                 "input_file": None if settings.input_file is None else str(settings.input_file),
                 "backend": config.backend,
+                "equation_set": config.equation_set,
+                "equation_mode": config.equation_mode,
                 "grid": [config.Nx, config.Ny, config.Nz],
                 "output_cadences": {
                     "scalar": config.t_out_scal,
@@ -284,6 +346,7 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
         if config.auto_dissipation.enabled:
             auto_dissipation_controller = AutoDissipationController.from_runtime(
                 settings=config.auto_dissipation,
+                equation_module=equation_module,
                 field_names=config.field_names,
                 grid=grid,
                 backend=backend,
@@ -291,16 +354,15 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
             )
             auto_dissipation_controller.update(state, config)
             auto_dissipation_diagnostics = auto_dissipation_controller.diagnostics()
-            linear_ops = s09.build_dissipation_operators(
+            linear_ops = equation_module.build_dissipation_operators(
                 grid,
                 config,
                 dissipation_spec=auto_dissipation_controller.effective_dissipation(),
             )
         else:
-            linear_ops = s09.build_dissipation_operators(grid, config)
+            linear_ops = equation_module.build_dissipation_operators(grid, config)
 
-        energy_initial = alfvenic_energy(state, grid, fft)
-        cross_initial = alfvenic_cross_helicity(state, grid, fft)
+        energy_initial = equation_module.total_energy(state, grid, backend, config)
         rhs_kwargs = {
             "grid": grid,
             "fft": fft,
@@ -336,28 +398,53 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
         forcing_rng = backend.random_generator(config.forcing_seed) if config.use_forcing else None
         track_budget = scalar_writer is not None
         budget_interval_duration = 0.0
-        budget_interval_terms: dict[str, dict[str, float]] = {
-            "total_energy": {
-                "dissipation": 0.0,
-                "forcing": 0.0,
+        budget_interval_terms: dict[str, dict[str, float]] = {}
+
+        def _instantaneous_budget_terms(sample_state: State) -> dict[str, dict[str, float]]:
+            budgets = equation_module.compute_conserved_quantity_budgets(
+                sample_state,
+                grid=grid,
+                backend=backend,
+                params=config,
+                linear_ops=linear_ops,
+            )
+            return {
+                quantity_name: {
+                    term_name: float(value)
+                    for term_name, value in payload.get("rhs_terms", {}).items()
+                }
+                for quantity_name, payload in budgets.items()
             }
-        }
+
+        def _accumulate_budget_terms(before: dict[str, dict[str, float]], after: dict[str, dict[str, float]], dt: float) -> None:
+            for quantity_name in sorted(set(before) | set(after)):
+                target = budget_interval_terms.setdefault(quantity_name, {})
+                term_names = set(before.get(quantity_name, {})) | set(after.get(quantity_name, {}))
+                for term_name in term_names:
+                    before_value = before.get(quantity_name, {}).get(term_name, 0.0)
+                    after_value = after.get(quantity_name, {}).get(term_name, 0.0)
+                    target[term_name] = target.get(term_name, 0.0) + 0.5 * (before_value + after_value) * dt
+
+        def _accumulate_budget_kick(quantity_name: str, term_name: str, value: float) -> None:
+            terms = budget_interval_terms.setdefault(quantity_name, {})
+            terms[term_name] = terms.get(term_name, 0.0) + value
 
         def _averaged_budget_terms() -> dict[str, dict[str, float]]:
             if budget_interval_duration <= 0.0:
-                return {
-                    "total_energy": {
-                        "dissipation": 0.0,
-                        "forcing": 0.0,
+                averaged = {
+                    quantity_name: {term_name: 0.0 for term_name in rhs_terms}
+                    for quantity_name, rhs_terms in _instantaneous_budget_terms(state).items()
+                }
+            else:
+                averaged = {
+                    quantity_name: {
+                        term_name: value / budget_interval_duration
+                        for term_name, value in rhs_terms.items()
                     }
+                    for quantity_name, rhs_terms in budget_interval_terms.items()
                 }
-            return {
-                quantity_name: {
-                    term_name: value / budget_interval_duration
-                    for term_name, value in rhs_terms.items()
-                }
-                for quantity_name, rhs_terms in budget_interval_terms.items()
-            }
+            averaged.setdefault("total_energy", {}).setdefault("forcing", 0.0)
+            return averaged
 
         def _reset_budget_interval() -> None:
             nonlocal budget_interval_duration
@@ -380,6 +467,7 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
                     backend=backend,
                     params=config,
                     workspace=workspace,
+                    equation_module=equation_module,
                     budget_rhs_terms=_averaged_budget_terms(),
                     extra_scalar_diagnostics=auto_dissipation_diagnostics,
                 )
@@ -401,7 +489,13 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
                 )
 
             if spectra_writer is not None and output_due(time=t, next_output_time=next_spectra_output, tmax=config.tmax):
-                spectra = perpendicular_energy_spectrum_from_state(state, grid, backend)
+                spectra = perpendicular_energy_spectrum_from_state(
+                    state,
+                    grid,
+                    backend,
+                    equation_module=equation_module,
+                    params=config,
+                )
                 spectra_writer.write_spectra(time=t, step=steps, spectra=spectra)
                 logger.event(
                     "spectra diagnostics",
@@ -454,27 +548,31 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
 
             while t < config.tmax - 1.0e-15:
                 if config.use_variable_dt:
-                    dt = compute_cfl_timestep(state, grid, fft, config, dt_prev=dt_last, workspace=workspace)
+                    dt = compute_cfl_timestep(
+                        state,
+                        grid,
+                        fft,
+                        config,
+                        dt_prev=dt_last,
+                        workspace=workspace,
+                        equation_module=equation_module,
+                    )
                 else:
                     dt = config.dt_init
                 dt = min(dt, config.tmax - t)
 
                 if track_budget:
-                    dissipation_before = s09.total_energy_dissipation_rhs(state, grid, backend, linear_ops, config)
+                    budget_before = _instantaneous_budget_terms(state)
 
-                stepped_state = if_ssprk3_step(state, dt, s09.ideal_rhs, linear_ops, rhs_kwargs=rhs_kwargs)
+                stepped_state = if_ssprk3_step(state, dt, rhs_func, linear_ops, rhs_kwargs=rhs_kwargs)
 
                 if track_budget:
-                    dissipation_after = s09.total_energy_dissipation_rhs(
-                        stepped_state, grid, backend, linear_ops, config
-                    )
-                    budget_interval_terms["total_energy"]["dissipation"] += 0.5 * (
-                        dissipation_before + dissipation_after
-                    ) * dt
+                    budget_after = _instantaneous_budget_terms(stepped_state)
+                    _accumulate_budget_terms(budget_before, budget_after, dt)
 
                 if config.use_forcing:
                     forcing_energy_before = (
-                        s09.total_energy(stepped_state, grid, backend, config) if track_budget else 0.0
+                        equation_module.total_energy(stepped_state, grid, backend, config) if track_budget else 0.0
                     )
                     forcing_kick = generate_forcing_kick(
                         stepped_state,
@@ -489,8 +587,10 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
                     )
                     state = apply_forcing_kick(stepped_state, forcing_kick, inplace=True)
                     if track_budget:
-                        budget_interval_terms["total_energy"]["forcing"] += (
-                            s09.total_energy(state, grid, backend, config) - forcing_energy_before
+                        _accumulate_budget_kick(
+                            "total_energy",
+                            "forcing",
+                            equation_module.total_energy(state, grid, backend, config) - forcing_energy_before,
                         )
                 else:
                     state = stepped_state
@@ -505,7 +605,7 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
                 if auto_dissipation_controller is not None and auto_dissipation_controller.should_update(steps):
                     auto_dissipation_controller.update(state, config)
                     auto_dissipation_diagnostics = auto_dissipation_controller.diagnostics()
-                    linear_ops = s09.build_dissipation_operators(
+                    linear_ops = equation_module.build_dissipation_operators(
                         grid,
                         config,
                         dissipation_spec=auto_dissipation_controller.effective_dissipation(),
@@ -533,18 +633,17 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
             if fullfield_writer is not None:
                 fullfield_writer.close()
 
-        energy_final = alfvenic_energy(state, grid, fft)
-        cross_final = alfvenic_cross_helicity(state, grid, fft)
+        energy_final = equation_module.total_energy(state, grid, backend, config)
         summary = {
             "backend": config.backend,
+            "equation_set": config.equation_set,
+            "equation_mode": config.equation_mode,
             "grid": list(grid.real_shape),
             "steps": steps,
             "t_final": t,
             "dt_last": dt_last,
-            "alfvenic_energy_initial": energy_initial,
-            "alfvenic_energy_final": energy_final,
-            "alfvenic_cross_helicity_initial": cross_initial,
-            "alfvenic_cross_helicity_final": cross_final,
+            "total_energy_initial": energy_initial,
+            "total_energy_final": energy_final,
             "psi_hat_max_abs": backend.scalar_to_float(backend.xp.max(backend.xp.abs(state["psi"]))),
             "output_dir": str(output_dir),
         }
@@ -557,6 +656,12 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
         logger.event("run complete", summary)
         return summary
     finally:
+        if poisson_bracket_overridden:
+            operators.poisson_bracket = original_operator_poisson_bracket
+            if module_had_poisson_bracket:
+                setattr(equation_module, "poisson_bracket", original_module_poisson_bracket)
+            else:
+                delattr(equation_module, "poisson_bracket")
         logger.close()
 
 

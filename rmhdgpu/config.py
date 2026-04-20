@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from typing import Any
 
 import numpy as np
 
 
-DEFAULT_FIELD_NAMES = ["psi", "omega", "upar", "dbpar", "s"]
+DEFAULT_EQUATION_SET = "s09"
+DEFAULT_EQUATION_MODE = "nonlinear"
 
 
 def _default_dissipation_for_fields(field_names: list[str]) -> dict[str, dict[str, float | int]]:
@@ -124,6 +125,8 @@ class Config:
     be reused consistently by both NumPy and CuPy backends.
     """
 
+    equation_set: str = DEFAULT_EQUATION_SET
+    equation_mode: str = DEFAULT_EQUATION_MODE
     Nx: int = 16
     Ny: int = 16
     Nz: int = 16
@@ -150,17 +153,35 @@ class Config:
     dealias_mode: str = "two_thirds"
     vA: float = 1.0
     cs2_over_vA2: float = 1.0
+    N2: float = 1.0
     use_forcing: bool = False
     n_min_force: float = 1.0
     n_max_force: float = 3.0
     alpha_force: float = 0.0
     force_amplitudes: dict[str, float] | None = None
     forcing_seed: int | None = None
-    field_names: list[str] = field(default_factory=lambda: list(DEFAULT_FIELD_NAMES))
+    field_names: list[str] | None = None
     dissipation: dict[str, dict[str, float | int]] | None = None
     auto_dissipation: AutoDissipationSettings | dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
+        from rmhdgpu.equations import get_equation_module
+
+        self.equation_set = str(self.equation_set)
+        self.equation_mode = str(self.equation_mode)
+        if self.equation_mode not in {"nonlinear", "linear"}:
+            raise ValueError(
+                f"equation_mode must be 'nonlinear' or 'linear'; got {self.equation_mode!r}."
+            )
+        try:
+            equation_module = get_equation_module(self.equation_set)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        if self.field_names is None:
+            self.field_names = list(equation_module.FIELD_NAMES)
+        else:
+            self.field_names = list(self.field_names)
+
         for name in ("Nx", "Ny", "Nz"):
             value = getattr(self, name)
             if not isinstance(value, int) or value <= 0:
@@ -259,6 +280,11 @@ class Config:
             )
         if self.alpha_force < 0.0:
             raise ValueError(f"alpha_force must be nonnegative; got {self.alpha_force!r}.")
+        self.vA = float(self.vA)
+        self.cs2_over_vA2 = float(self.cs2_over_vA2)
+        self.N2 = float(self.N2)
+        if self.N2 <= 0.0:
+            raise ValueError(f"N2 must be positive; got {self.N2!r}.")
         if self.forcing_seed is not None:
             if not isinstance(self.forcing_seed, (int, np.integer)):
                 raise ValueError(
@@ -364,3 +390,9 @@ def default_config_dict() -> dict[str, Any]:
     """Return the fully resolved default configuration as a plain dict."""
 
     return config_to_dict(Config())
+
+
+def default_config_dict_for_equation(equation_set: str) -> dict[str, Any]:
+    """Return resolved default configuration values for one equation set."""
+
+    return config_to_dict(Config(equation_set=equation_set))

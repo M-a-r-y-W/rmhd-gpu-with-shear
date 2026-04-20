@@ -11,7 +11,8 @@ from rmhdgpu.config import Config
 from rmhdgpu.equations import s09
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
-from rmhdgpu.initconds.random_modes import random_band_limited_field
+from rmhdgpu.initconds import build_initial_state
+from rmhdgpu.initconds.testing import decaying_low_modes_test_parameters
 from rmhdgpu.masks import build_dealias_mask
 from rmhdgpu.run import main
 from rmhdgpu.runfile import resolve_run_settings
@@ -34,18 +35,16 @@ def _build_test_state(
     rms: float = 0.1,
 ) -> tuple[object, object, State, object]:
     backend, grid, fft, _, mask = _build_context(config)
-    state = State(grid, backend, field_names=config.field_names)
-    for offset, name in enumerate(config.field_names):
-        state[name][...] = random_band_limited_field(
-            grid=grid,
-            backend=backend,
-            fft=fft,
-            kmin=1.0,
-            kmax=3.0,
-            seed=30 + offset,
-            rms=rms,
-            dealias_mask=mask,
-        )
+    state = build_initial_state(
+        "decaying_low_modes",
+        parameters=decaying_low_modes_test_parameters(rms),
+        grid=grid,
+        backend=backend,
+        fft=fft,
+        dealias_mask=mask,
+        field_names=config.field_names,
+        params=config,
+    )
     return backend, grid, state, mask
 
 
@@ -152,6 +151,7 @@ def test_auto_dissipation_update_returns_finite_values() -> None:
     backend, grid, state, mask = _build_test_state(config)
     controller = AutoDissipationController.from_runtime(
         settings=config.auto_dissipation,
+        equation_module=s09,
         field_names=config.field_names,
         grid=grid,
         backend=backend,
@@ -173,6 +173,7 @@ def test_auto_dissipation_no_fft_needed() -> None:
     backend, grid, state, mask = _build_test_state(config)
     controller = AutoDissipationController.from_runtime(
         settings=config.auto_dissipation,
+        equation_module=s09,
         field_names=config.field_names,
         grid=grid,
         backend=backend,
@@ -204,6 +205,7 @@ def test_auto_dissipation_smoothing_behaves_reasonably() -> None:
     state = State(grid, backend, field_names=config.field_names)
     controller = AutoDissipationController.from_runtime(
         settings=config.auto_dissipation,
+        equation_module=s09,
         field_names=config.field_names,
         grid=grid,
         backend=backend,
@@ -227,6 +229,7 @@ def test_auto_mode_gives_common_coefficients_to_all_fields() -> None:
     backend, grid, state, mask = _build_test_state(config)
     controller = AutoDissipationController.from_runtime(
         settings=config.auto_dissipation,
+        equation_module=s09,
         field_names=config.field_names,
         grid=grid,
         backend=backend,

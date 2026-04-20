@@ -13,7 +13,7 @@ from rmhdgpu.diagnostics.alfvenic import (
 from rmhdgpu.equations import s09
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
-from rmhdgpu.initconds.eigenmodes import alfven_mode_state
+from rmhdgpu.initconds.eigenmodes_s09 import alfven_mode_state
 from rmhdgpu.masks import build_dealias_mask
 from rmhdgpu.operators import dz, lap_perp, poisson_bracket
 from rmhdgpu.state import State
@@ -50,7 +50,7 @@ def _advance(
     }
     current = state
     for _ in range(steps):
-        current = ssprk3_step(current, dt, s09.rhs, rhs_kwargs=rhs_kwargs)
+        current = ssprk3_step(current, dt, s09.ideal_rhs, rhs_kwargs=rhs_kwargs)
     return current
 
 
@@ -128,7 +128,7 @@ def _nonlinearity_metrics(
 
     pb_rms = _real_rms(pb_hat, fft, state.backend)
     linear_rms = _real_rms(linear_hat, fft, state.backend)
-    rhs_state = s09.rhs(state, grid, fft, workspace, config, dealias_mask=mask)
+    rhs_state = s09.ideal_rhs(state, grid, fft, workspace, config, dealias_mask=mask)
     rhs_psi_rms = _real_rms(rhs_state["psi"], fft, state.backend)
 
     return {
@@ -163,7 +163,7 @@ def _broken_psi_rhs(
 ) -> State:
     """Return a test-only RHS with the psi-bracket coefficient changed to 0.5."""
 
-    rhs_state = s09.rhs(state, grid, fft, workspace, params, dealias_mask=dealias_mask)
+    rhs_state = s09.ideal_rhs(state, grid, fft, workspace, params, dealias_mask=dealias_mask)
     phi_hat = s09.derive_phi_hat(state["omega"], grid)
     pb_hat = poisson_bracket(phi_hat, state["psi"], grid, fft, workspace, mask=dealias_mask)
     rhs_state["psi"][...] += 0.5 * pb_hat
@@ -190,7 +190,7 @@ def test_deterministic_nonlinear_alfvenic_state_has_nonzero_brackets() -> None:
 def test_alfvenic_instantaneous_rhs_conservation_for_nonlinear_state() -> None:
     config, backend, grid, fft, workspace, mask = _build_context()
     state = _build_budget_test_state(config, backend, grid, fft, workspace, mask)
-    rhs_state = s09.rhs(state, grid, fft, workspace, config, dealias_mask=mask)
+    rhs_state = s09.ideal_rhs(state, grid, fft, workspace, config, dealias_mask=mask)
     metrics = _nonlinearity_metrics(state, config, grid, fft, workspace, mask)
 
     d_energy = alfvenic_energy_rhs_budget(state, rhs_state, grid, fft)
@@ -285,7 +285,7 @@ def test_time_refinement_reduces_numerical_invariant_drift_for_nonlinear_state()
 def test_broken_psi_bracket_coefficient_breaks_instantaneous_conservation() -> None:
     config, backend, grid, fft, workspace, mask = _build_context()
     state = _build_budget_test_state(config, backend, grid, fft, workspace, mask)
-    correct_rhs = s09.rhs(state, grid, fft, workspace, config, dealias_mask=mask)
+    correct_rhs = s09.ideal_rhs(state, grid, fft, workspace, config, dealias_mask=mask)
     broken_rhs = _broken_psi_rhs(state, grid, fft, workspace, config, mask)
 
     correct_energy = alfvenic_energy_rhs_budget(state, correct_rhs, grid, fft)

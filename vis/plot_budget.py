@@ -125,8 +125,9 @@ def main(argv: list[str] | None = None) -> Path:
     axes[1].plot(
         time,
         columns[rhs_total_name],
-        lw=2.2,
-        color="tab:blue",ls=':',
+        lw=3.0,
+        color="black",
+        ls="-",
         label=rhs_total_name,
     )
     term_linestyles = ["--", ":", "-."]
@@ -141,8 +142,9 @@ def main(argv: list[str] | None = None) -> Path:
     axes[1].plot(
         time,
         residual,
-        lw=2.8,
-        color="black",
+        lw=1.8,
+        ls=":",
+        color="0.2",
         label=rf"closure residual: measured d$_t$ {args.quantity} - {rhs_total_name}",
     )
     axes[1].axhline(0.0, color="0.4", lw=1.0, alpha=0.6)

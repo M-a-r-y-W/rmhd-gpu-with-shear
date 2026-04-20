@@ -277,7 +277,16 @@ def main() -> None:
         if t >= target_time - 1.0e-15:
             if sample_index < len(sample_times) and next_spectrum_time <= target_time + 1.0e-15:
                 spectra_by_time.append(
-                    (sample_times[sample_index], perpendicular_energy_spectrum_from_state(current, grid, backend))
+                    (
+                        sample_times[sample_index],
+                        perpendicular_energy_spectrum_from_state(
+                            current,
+                            grid,
+                            backend,
+                            equation_module=s09,
+                            params=config,
+                        ),
+                    )
                 )
                 sample_index += 1
             if frame_index < len(frame_times) and next_frame_time <= target_time + 1.0e-15:

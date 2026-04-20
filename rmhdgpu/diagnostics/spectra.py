@@ -6,9 +6,6 @@ from typing import Any
 
 import numpy as np
 
-from rmhdgpu.equations.s09 import derive_phi_hat
-
-
 PERPENDICULAR_SPECTRUM_KEYS = ("u_perp", "b_perp", "upar", "dbpar", "s")
 _SPECTRUM_GRID_CACHE: dict[tuple[int, int, int, float, float, float], tuple[np.ndarray, np.ndarray]] = {}
 
@@ -77,52 +74,34 @@ def perpendicular_energy_spectrum_from_state(
     grid: Any,
     backend: Any | None = None,
     bin_width: float | None = None,
+    equation_module: Any | None = None,
+    params: Any | None = None,
 ) -> dict[str, np.ndarray]:
-    """Return simple perpendicular shell spectra for the five-field system."""
+    """Return perpendicular shell spectra for the selected equation set."""
 
     backend_obj = state.backend if backend is None else backend
-    phi_hat = derive_phi_hat(state["omega"], grid)
-    kperp2 = grid.kperp2
-    xp = backend_obj.xp
+    if equation_module is not None and hasattr(equation_module, "perpendicular_energy_spectra"):
+        return equation_module.perpendicular_energy_spectra(
+            state,
+            grid,
+            backend_obj,
+            bin_width=bin_width,
+            params=params,
+        )
 
-    kperp, u_perp = perpendicular_shell_spectrum(
-        0.5 * kperp2 * (xp.abs(phi_hat) ** 2),
-        grid,
-        backend_obj,
-        bin_width=bin_width,
-    )
-    _, b_perp = perpendicular_shell_spectrum(
-        0.5 * kperp2 * (xp.abs(state["psi"]) ** 2),
-        grid,
-        backend_obj,
-        bin_width=bin_width,
-    )
-    _, upar = perpendicular_shell_spectrum(
-        0.5 * (xp.abs(state["upar"]) ** 2),
-        grid,
-        backend_obj,
-        bin_width=bin_width,
-    )
-    _, dbpar = perpendicular_shell_spectrum(
-        0.5 * (xp.abs(state["dbpar"]) ** 2),
-        grid,
-        backend_obj,
-        bin_width=bin_width,
-    )
-    _, entropy = perpendicular_shell_spectrum(
-        0.5 * (xp.abs(state["s"]) ** 2),
-        grid,
-        backend_obj,
-        bin_width=bin_width,
-    )
-    return {
-        "kperp": kperp,
-        "u_perp": u_perp,
-        "b_perp": b_perp,
-        "upar": upar,
-        "dbpar": dbpar,
-        "s": entropy,
-    }
+    xp = backend_obj.xp
+    spectra: dict[str, np.ndarray] = {}
+    for index, field_name in enumerate(state.field_names):
+        kperp, spectrum = perpendicular_shell_spectrum(
+            0.5 * xp.abs(state[field_name]) ** 2,
+            grid,
+            backend_obj,
+            bin_width=bin_width,
+        )
+        if index == 0:
+            spectra["kperp"] = kperp
+        spectra[field_name] = spectrum
+    return spectra
 
 
 def compute_placeholder_spectra(*args: Any, **kwargs: Any) -> dict[str, Any]:

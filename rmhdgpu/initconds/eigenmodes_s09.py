@@ -1,4 +1,10 @@
-"""Exact linear single-mode initializers for the ideal homogeneous system."""
+"""Exact linear S09 mode constructors used mainly for verification.
+
+These helpers build exact single-mode states for the homogeneous S09 system.
+They exist primarily to support solver verification tests and the lightweight
+registered `alfven_mode` initial condition. They are not the main user-facing
+initial-condition registry; that lives in `rmhdgpu.initconds.builtin`.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +13,7 @@ from typing import Any
 
 import numpy as np
 
-from rmhdgpu.equations.s09 import FIELD_NAMES, alpha_from_params
+from rmhdgpu.equations.s09 import FIELD_NAMES, derived_parameters
 from rmhdgpu.operators import lap_perp
 from rmhdgpu.state import State
 
@@ -48,7 +54,7 @@ def alfven_mode_state(
     branch: str = "plus",
     params: Any | None = None,
 ) -> State:
-    """Return an exact linear Alfvén eigenmode in Fourier space.
+    """Return an exact linear S09 Alfvén eigenmode in Fourier space.
 
     Branch convention:
 
@@ -58,6 +64,7 @@ def alfven_mode_state(
       `exp(-i vA k_z t)`
 
     The amplitude parameter sets the stored Fourier coefficient of `psi_hat`.
+    This helper is mainly intended for controlled verification setups.
     """
 
     names = list(FIELD_NAMES if field_names is None else field_names)
@@ -87,7 +94,7 @@ def slow_mode_state(
     branch: str = "plus",
     params: Any | None = None,
 ) -> State:
-    """Return an exact linear slow-mode eigenvector in Fourier space.
+    """Return an exact linear S09 slow-mode eigenvector in Fourier space.
 
     The amplitude parameter sets the stored Fourier coefficient of `upar_hat`.
 
@@ -97,6 +104,7 @@ def slow_mode_state(
       `dbpar = +(sqrt(alpha) / vA) * upar`
     - `branch="minus"`: eigenvalue `-i c_slow k_z`, relation
       `dbpar = -(sqrt(alpha) / vA) * upar`
+    This helper is mainly intended for controlled verification setups.
     """
 
     if params is None:
@@ -106,15 +114,14 @@ def slow_mode_state(
     state = State(grid, backend, field_names=names)
 
     sign = _branch_sign(branch)
-    alpha = alpha_from_params(params)
-    vA = float(params["vA"] if isinstance(params, dict) else getattr(params, "vA"))
-    if vA == 0.0:
+    s09_params = derived_parameters(params)
+    if s09_params.vA == 0.0:
         raise ValueError("slow_mode_state requires nonzero vA.")
-    if alpha < 0.0:
-        raise ValueError(f"alpha must be nonnegative; got {alpha}.")
+    if s09_params.alpha < 0.0:
+        raise ValueError(f"alpha must be nonnegative; got {s09_params.alpha}.")
 
     upar_hat = _stored_mode_array(grid, backend, k_indices, amplitude)
-    dbpar_hat = sign * (np.sqrt(alpha) / vA) * upar_hat
+    dbpar_hat = sign * (np.sqrt(s09_params.alpha) / s09_params.vA) * upar_hat
 
     state["upar"][...] = upar_hat
     state["dbpar"][...] = dbpar_hat
@@ -128,7 +135,10 @@ def entropy_mode_state(
     k_indices: Sequence[int],
     amplitude: complex | float = 1.0,
 ) -> State:
-    """Return a pure stationary entropy mode in Fourier space."""
+    """Return a pure stationary S09 entropy mode in Fourier space.
+
+    This helper is mainly intended for controlled verification setups.
+    """
 
     names = list(FIELD_NAMES if field_names is None else field_names)
     state = State(grid, backend, field_names=names)

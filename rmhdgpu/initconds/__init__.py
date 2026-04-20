@@ -17,16 +17,16 @@ from rmhdgpu.initconds.builtin import (
     initial_u_rms,
     list_initial_condition_types,
     low_mode_real_field,
+    low_beta_stratified_mode,
     normalize_initial_condition_parameters,
     register_initial_condition,
     zero,
 )
-from rmhdgpu.initconds.eigenmodes import (
+from rmhdgpu.initconds.eigenmodes_s09 import (
     alfven_mode_state,
     entropy_mode_state,
     slow_mode_state,
 )
-from rmhdgpu.initconds.random_modes import random_band_limited_field
 from rmhdgpu.initconds.testing import single_mode_field
 
 __all__ = [
@@ -42,8 +42,8 @@ __all__ = [
     "initial_u_rms",
     "list_initial_condition_types",
     "low_mode_real_field",
+    "low_beta_stratified_mode",
     "normalize_initial_condition_parameters",
-    "random_band_limited_field",
     "register_initial_condition",
     "single_mode_field",
     "slow_mode_state",

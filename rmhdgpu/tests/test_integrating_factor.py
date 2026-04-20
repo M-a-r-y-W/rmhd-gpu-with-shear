@@ -7,7 +7,7 @@ from rmhdgpu.config import Config
 from rmhdgpu.equations import s09
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
-from rmhdgpu.initconds.eigenmodes import alfven_mode_state
+from rmhdgpu.initconds.eigenmodes_s09 import alfven_mode_state
 from rmhdgpu.initconds.testing import single_mode_field
 from rmhdgpu.masks import build_dealias_mask
 from rmhdgpu.state import State

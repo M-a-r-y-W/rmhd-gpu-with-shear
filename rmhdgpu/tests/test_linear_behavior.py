@@ -8,7 +8,7 @@ from rmhdgpu.config import Config
 from rmhdgpu.equations import s09
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
-from rmhdgpu.initconds.eigenmodes import alfven_mode_state, entropy_mode_state, slow_mode_state
+from rmhdgpu.initconds.eigenmodes_s09 import alfven_mode_state, entropy_mode_state, slow_mode_state
 from rmhdgpu.masks import build_dealias_mask
 from rmhdgpu.state import State
 from rmhdgpu.steppers import ssprk3_step
@@ -44,7 +44,7 @@ def _advance(
     }
     current = state
     for _ in range(steps):
-        current = ssprk3_step(current, dt, s09.rhs, rhs_kwargs=rhs_kwargs)
+        current = ssprk3_step(current, dt, s09.ideal_rhs, rhs_kwargs=rhs_kwargs)
     return current
 
 
@@ -89,7 +89,7 @@ def test_alfven_single_mode_matches_exact_linear_evolution(branch: str, sign: fl
 @pytest.mark.parametrize("branch,sign", [("plus", 1.0), ("minus", -1.0)])
 def test_slow_single_mode_matches_exact_linear_evolution(branch: str, sign: float) -> None:
     config, backend, grid, fft, workspace, mask = _build_linear_context()
-    alpha = s09.alpha_from_params(config)
+    alpha = s09.derived_parameters(config).alpha
     state0 = slow_mode_state(
         grid=grid,
         backend=backend,
@@ -138,4 +138,3 @@ def test_entropy_mode_stationary() -> None:
             rtol=1.0e-14,
             err_msg=f"Entropy-mode stationarity failed for field {name}.",
         )
-

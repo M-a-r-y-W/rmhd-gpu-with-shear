@@ -20,10 +20,11 @@ from typing import Any
 
 import numpy as np
 
-from rmhdgpu.initconds.eigenmodes import alfven_mode_state
+from rmhdgpu.initconds.eigenmodes_s09 import alfven_mode_state
 from rmhdgpu.masks import apply_mask
 from rmhdgpu.operators import dx, dy, lap_perp
 from rmhdgpu.state import State
+from rmhdgpu.equations import get_equation_module
 
 
 InitialConditionBuilder = Callable[..., State]
@@ -41,6 +42,8 @@ DECAY_LOW_MODE_DEFAULTS = {
     "dbpar_amplitude": 0.06,
     "s_seed": 5,
     "s_amplitude": 0.05,
+    "a_seed": 6,
+    "a_amplitude": 0.05,
 }
 
 
@@ -303,6 +306,33 @@ def _normalize_alfven_mode_parameters(parameters: dict[str, Any]) -> dict[str, A
     }
 
 
+def _normalize_low_beta_mode_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
+    allowed = {"k_indices", "amplitude", "mode"}
+    _reject_unknown_parameters("low_beta_stratified_mode", parameters, allowed)
+
+    raw_k = parameters.get("k_indices", [0, 1, 0])
+    if not isinstance(raw_k, (list, tuple)) or len(raw_k) != 3:
+        raise ValueError("k_indices must be an array of three integers.")
+    k_indices: list[int] = []
+    for index, value in enumerate(raw_k):
+        if not isinstance(value, int):
+            raise ValueError(f"k_indices[{index}] must be an integer; got {value!r}.")
+        if value < 0:
+            raise ValueError(f"k_indices[{index}] must be nonnegative; got {value!r}.")
+        k_indices.append(int(value))
+
+    amplitude = float(parameters.get("amplitude", 1.0))
+    if amplitude <= 0.0:
+        raise ValueError(f"amplitude must be positive; got {amplitude!r}.")
+
+    mode = str(parameters.get("mode", "unstable_growing"))
+    allowed_modes = {"unstable_growing", "unstable_decaying", "stable_plus", "stable_minus"}
+    if mode not in allowed_modes:
+        raise ValueError(f"mode must be one of {sorted(allowed_modes)}; got {mode!r}.")
+
+    return {"k_indices": k_indices, "amplitude": amplitude, "mode": mode}
+
+
 def _normalize_decaying_low_modes_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
     _reject_unknown_parameters("decaying_low_modes", parameters, set(DECAY_LOW_MODE_DEFAULTS))
 
@@ -359,6 +389,7 @@ def alfven_mode(
     """Build an exact linear Alfvén eigenmode."""
 
     normalized = _normalize_alfven_mode_parameters(_as_parameter_dict(parameters))
+    _require_fields("alfven_mode", field_names, ("psi", "omega"))
     return alfven_mode_state(
         grid=grid,
         backend=backend,
@@ -368,6 +399,62 @@ def alfven_mode(
         branch=normalized["branch"],
         params=params,
     )
+
+
+@register_initial_condition(
+    "low_beta_stratified_mode",
+    normalize_parameters=_normalize_low_beta_mode_parameters,
+    description="Single linear eigenmode of the low_beta_stratified equation set.",
+)
+def low_beta_stratified_mode(
+    *,
+    parameters: Mapping[str, Any] | None = None,
+    grid: Any,
+    backend: Any,
+    fft: Any,
+    dealias_mask: Any | None,
+    field_names: Sequence[str],
+    params: Any,
+) -> State:
+    """Build a single linear eigenmode using the equation module eigensystem."""
+
+    normalized = _normalize_low_beta_mode_parameters(_as_parameter_dict(parameters))
+    _require_fields("low_beta_stratified_mode", field_names, ("psi", "omega", "a"))
+    equation_module = get_equation_module("low_beta_stratified")
+
+    ix_raw, iy_raw, iz = normalized["k_indices"]
+    if iz < 0 or iz > grid.Nz // 2:
+        raise ValueError(f"k_indices[2] must satisfy 0 <= kz <= Nz//2; got {iz}.")
+    ix = ix_raw % grid.Nx
+    iy = iy_raw % grid.Ny
+    kx = backend.scalar_to_float(grid.kx[ix, 0, 0])
+    ky = backend.scalar_to_float(grid.ky[0, iy, 0])
+    kz = backend.scalar_to_float(grid.kz[0, 0, iz])
+
+    matrix = equation_module.linear_matrix(kx=kx, ky=ky, kz=kz, params=params)
+    eigenvalues, eigenvectors = np.linalg.eig(matrix)
+    mode = normalized["mode"]
+    if mode == "unstable_growing":
+        selected = int(np.argmax(eigenvalues.real))
+    elif mode == "unstable_decaying":
+        selected = int(np.argmin(eigenvalues.real))
+    elif mode == "stable_plus":
+        selected = int(np.argmax(eigenvalues.imag))
+    else:
+        selected = int(np.argmin(eigenvalues.imag))
+
+    vector = eigenvectors[:, selected]
+    scale = np.max(np.abs(vector))
+    if scale <= 0.0:
+        raise ValueError("Selected low-beta eigenvector has zero amplitude.")
+    vector = normalized["amplitude"] * vector / scale
+
+    state = State(grid, backend, field_names=list(field_names))
+    for component, field_name in enumerate(equation_module.FIELD_NAMES):
+        state[field_name][ix, iy, iz] = vector[component]
+    if dealias_mask is not None:
+        state.apply_mask(dealias_mask)
+    return state
 
 
 @register_initial_condition(
@@ -415,7 +502,7 @@ def decaying_low_modes(
     """Build the multifield low-mode random initial condition."""
 
     normalized = _normalize_decaying_low_modes_parameters(_as_parameter_dict(parameters))
-    _require_fields("decaying_low_modes", field_names, ("psi", "omega", "upar", "dbpar", "s"))
+    _require_fields("decaying_low_modes", field_names, ("psi", "omega"))
 
     state = State(grid, backend, field_names=list(field_names))
     phi_hat = _masked_r2c(
@@ -446,7 +533,10 @@ def decaying_low_modes(
         ("upar", "upar_seed", "upar_amplitude"),
         ("dbpar", "dbpar_seed", "dbpar_amplitude"),
         ("s", "s_seed", "s_amplitude"),
+        ("a", "a_seed", "a_amplitude"),
     ):
+        if field_name not in state.field_names:
+            continue
         state[field_name][...] = _masked_r2c(
             low_mode_real_field(
                 grid,

@@ -1,7 +1,11 @@
-"""Ideal homogeneous Schekochihin-2009-style five-field prototype.
+"""Homogeneous S09 five-field equation set.
 
-This module implements the nondissipative homogeneous system in Fourier space
-using the package-wide conventions:
+This module is intended to be the main physics-facing file for this equation
+set. Generic solver bookkeeping should live elsewhere; the functions here
+define the evolved fields, derived parameters, derived fields, ideal RHS,
+linear representation, dissipation operators, energy, and budget terms.
+
+Fourier conventions used throughout the solver:
 
 - `z` is the parallel direction
 - real arrays have shape `(Nx, Ny, Nz)`
@@ -9,9 +13,8 @@ using the package-wide conventions:
 - `lap_perp(f_hat) = -k_perp^2 f_hat`
 - `inv_lap_perp(f_hat) = -inv_kperp2 f_hat`
 
-The evolved fields are `[psi, omega, upar, dbpar, s]`, with the derived
-potential `phi = inv_lap_perp(omega)`. The homogeneous equations solved here
-are
+The evolved fields are `[psi, omega, upar, dbpar, s]`, with
+`phi = inv_lap_perp(omega)`. The homogeneous ideal equations are
 
 - `psi_t = vA * dz(phi) - {phi, psi}`
 - `omega_t = vA * dz(lap_perp psi) - {phi, omega} + {psi, lap_perp psi}`
@@ -19,79 +22,71 @@ are
 - `upar_t = vA^2 * dz(dbpar) - {phi, upar} + vA^2 * {psi, dbpar}`
 - `s_t = -{phi, s}`
 
-with `alpha = chi / (1 + chi)` and `chi = cs2_over_vA2 = cs^2 / vA^2`.
-
-The saved total-energy diagnostic uses the intended S09 code-variable
-normalization
-
-`E = 0.5 * (|grad_perp phi|^2 + |grad_perp psi|^2 + |upar|^2
-            + alpha^(-1) |dbpar|^2
-            + [chi / (gamma^2 (gamma - 1))] |s|^2)`
-
-with the diagnostic adiabatic index fixed to `gamma = 5/3`.
+with `chi = cs2_over_vA2 = cs^2 / vA^2` and `alpha = chi / (1 + chi)`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 
+from rmhdgpu.fourier_diagnostics import modal_average
 from rmhdgpu.operators import dz, inv_lap_perp, lap_perp, poisson_bracket
+from rmhdgpu.diagnostics.spectra import perpendicular_shell_spectrum
 from rmhdgpu.state import State
 
 
+EQUATION_SET_NAME = "s09"
 FIELD_NAMES = ["psi", "omega", "upar", "dbpar", "s"]
+DEFAULT_INITIAL_CONDITION = "alfven_mode"
 DIAGNOSTIC_GAMMA = 5.0 / 3.0
-_MODAL_WEIGHTS_CACHE: dict[tuple[str, int, int, int, str], Any] = {}
 
 
-def _get_param(params: Any, name: str) -> float:
+@dataclass(frozen=True, slots=True)
+class S09Parameters:
+    """Scalar parameters and diagnostic weights used by this equation set."""
+
+    vA: float
+    chi: float
+    alpha: float
+    gamma: float
+    dbpar_energy_weight: float
+    entropy_energy_weight: float
+
+
+def _param_float(params: Any, name: str) -> float:
     if isinstance(params, Mapping):
         return float(params[name])
     return float(getattr(params, name))
 
 
-def alpha_from_params(params: Any) -> float:
-    """Return `alpha = chi / (1 + chi)` from the supplied parameter object."""
+def derived_parameters(params: Any) -> S09Parameters:
+    """Return the compact set of scalars used by the S09 equations.
 
-    chi = _get_param(params, "cs2_over_vA2")
-    return chi / (1.0 + chi)
-
-
-def chi_from_params(params: Any) -> float:
-    """Return `chi = cs^2 / vA^2` from the supplied parameter object."""
-
-    return _get_param(params, "cs2_over_vA2")
-
-
-def _diagnostic_energy_weights(params: Any) -> tuple[float, float]:
-    """Return the compressive-sector weights used by the saved S09 energy.
-
-    The Alfvénic pieces are always measured through
-
-    - `u_perp ~ grad_perp phi`
-    - `b_perp ~ grad_perp psi`
-
-    so only the compressive weights need explicit parameter-dependent factors
-    here. The entropy contribution uses a fixed diagnostic `gamma = 5/3`.
+    This is the first place to edit if a new parameter enters the physics.
+    `gamma` is currently fixed to `5/3` for the diagnostic entropy
+    normalization.
     """
 
-    alpha = alpha_from_params(params)
-    chi = chi_from_params(params)
-    dbpar_weight = 1.0 / alpha
-    entropy_weight = chi / (DIAGNOSTIC_GAMMA**2 * (DIAGNOSTIC_GAMMA - 1.0))
-    return dbpar_weight, entropy_weight
+    vA = _param_float(params, "vA")
+    chi = _param_float(params, "cs2_over_vA2")
+    alpha = chi / (1.0 + chi)
+    gamma = DIAGNOSTIC_GAMMA
+    return S09Parameters(
+        vA=vA,
+        chi=chi,
+        alpha=alpha,
+        gamma=gamma,
+        dbpar_energy_weight=1.0 / alpha,
+        entropy_energy_weight=chi / (gamma**2 * (gamma - 1.0)),
+    )
 
 
 def derive_phi_hat(omega_hat: Any, grid: Any) -> Any:
-    """Return `phi_hat = inv_lap_perp(omega_hat)`.
-
-    The `k_perp = 0` modes are regularized to zero through the grid's
-    `inv_kperp2` definition, so `phi_hat` is only meaningful in the RMHD
-    subspace with nonzero perpendicular wavenumber.
-    """
+    """Return `phi_hat = inv_lap_perp(omega_hat)`."""
 
     return inv_lap_perp(omega_hat, grid)
 
@@ -102,156 +97,145 @@ def derive_j_hat(psi_hat: Any, grid: Any) -> Any:
     return -lap_perp(psi_hat, grid)
 
 
-def _modal_weights(grid: Any, backend: Any) -> Any:
-    cache_key = (backend.backend_name, grid.Nx, grid.Ny, grid.Nz, str(grid.real_dtype))
-    cached = _MODAL_WEIGHTS_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
+def characteristic_speeds(params: Any) -> list[float]:
+    """Return parallel linear speeds relevant to the CFL estimate."""
 
-    xp = backend.xp
-    weights = xp.ones(grid.fourier_shape, dtype=grid.real_dtype)
-    if grid.Nz % 2 == 0:
-        weights[..., 1:-1] = 2.0
-    else:
-        weights[..., 1:] = 2.0
-    _MODAL_WEIGHTS_CACHE[cache_key] = weights
-    return weights
+    p = derived_parameters(params)
+    return [p.vA, p.vA * np.sqrt(p.alpha)]
 
 
-def _modal_average(density_hat: Any, grid: Any, backend: Any) -> float:
-    normalization = float(np.prod(grid.real_shape) ** 2)
-    value = backend.xp.sum(_modal_weights(grid, backend) * backend.xp.real(density_hat)) / normalization
-    return backend.scalar_to_float(value)
-
-
-def modal_density_average(
-    density_hat: Any,
-    grid: Any,
-    backend: Any,
-    mask: Any | None = None,
-) -> float:
-    """Return the weighted average of a modal density, optionally over a mask."""
-
-    xp = backend.xp
-    weights = _modal_weights(grid, backend)
-    weighted_density = weights * xp.real(density_hat)
-    if mask is not None:
-        weighted_density = weighted_density * mask
-    normalization = float(np.prod(grid.real_shape) ** 2)
-    return backend.scalar_to_float(xp.sum(weighted_density) / normalization)
-
-
-def total_energy_modal_density(state: State, grid: Any, backend: Any, params: Any) -> Any:
-    """Return the modal quadratic density for the conserved total energy.
-
-    This is the Fourier-space density whose weighted sum gives
-    :func:`total_energy`. The Alfvénic fields must be measured through
-    `u_perp ~ grad_perp phi` and `b_perp ~ grad_perp psi`, so the density uses
-    `k_perp^2 |phi_hat|^2` and `k_perp^2 |psi_hat|^2` rather than raw
-    `|phi_hat|^2` or `|psi_hat|^2`.
-
-    In code variables the quadratic form is
-
-    `E = 0.5 * (k_perp^2 |phi_hat|^2 + k_perp^2 |psi_hat|^2 + |upar_hat|^2`
-    `           + alpha^(-1) |dbpar_hat|^2`
-    `           + [chi / (gamma^2 (gamma - 1))] |s_hat|^2)`
-
-    with `gamma = 5/3`.
-    """
-
-    xp = backend.xp
-    dbpar_weight, entropy_weight = _diagnostic_energy_weights(params)
-    phi_hat = derive_phi_hat(state["omega"], grid)
-    return (
-        0.5 * grid.kperp2 * (xp.abs(phi_hat) ** 2 + xp.abs(state["psi"]) ** 2)
-        + 0.5 * xp.abs(state["upar"]) ** 2
-        + 0.5 * dbpar_weight * xp.abs(state["dbpar"]) ** 2
-        + 0.5 * entropy_weight * xp.abs(state["s"]) ** 2
-    )
-
-
-def total_energy(state: State, grid: Any, backend: Any, params: Any) -> float:
-    """Return the conserved quadratic energy of the five-field homogeneous system.
-
-    This uses the intended S09 diagnostic normalization in code variables:
-
-    `E = 0.5 * (|grad_perp phi|^2 + |grad_perp psi|^2 + |upar|^2`
-    `           + alpha^(-1) |dbpar|^2`
-    `           + [chi / (gamma^2 (gamma - 1))] |s|^2)`
-
-    with `gamma = 5/3`.
-    """
-
-    density_hat = total_energy_modal_density(state, grid, backend, params)
-    return _modal_average(density_hat, grid, backend)
-
-
-def total_energy_dissipation_rhs(
+def ideal_rhs(
     state: State,
     grid: Any,
-    backend: Any,
-    linear_ops: dict[str, Any],
+    fft: Any,
+    workspace: Any,
     params: Any,
-) -> float:
-    """Return the signed dissipative contribution to `d_t E`.
+    dealias_mask: Any | None = None,
+    out: State | None = None,
+) -> State:
+    """Return the Fourier-space ideal RHS of the homogeneous five-field system."""
 
-    The sign convention is
+    p = derived_parameters(params)
 
-    `d_t E = forcing + other_terms + dissipation`
+    psi_hat = state["psi"]
+    omega_hat = state["omega"]
+    upar_hat = state["upar"]
+    dbpar_hat = state["dbpar"]
+    s_hat = state["s"]
 
-    so this term is negative when the diagonal damping operators remove
-    energy from the state. The weighting matches :func:`total_energy`
-    exactly, including the `alpha^(-1)` factor for `dbpar` and the fixed
-    entropy prefactor `chi / (gamma^2 (gamma - 1))` with `gamma = 5/3`.
-    """
+    phi_hat = derive_phi_hat(omega_hat, grid)
+    lap_psi_hat = lap_perp(psi_hat, grid)
 
-    xp = backend.xp
-    dbpar_weight, entropy_weight = _diagnostic_energy_weights(params)
-    phi_hat = derive_phi_hat(state["omega"], grid)
-    density_hat = (
-        -linear_ops["omega"] * grid.kperp2 * (xp.abs(phi_hat) ** 2)
-        - linear_ops["psi"] * grid.kperp2 * (xp.abs(state["psi"]) ** 2)
-        - linear_ops["upar"] * xp.abs(state["upar"]) ** 2
-        - dbpar_weight * linear_ops["dbpar"] * xp.abs(state["dbpar"]) ** 2
-        - entropy_weight * linear_ops["s"] * xp.abs(state["s"]) ** 2
+    rhs_state = state.zeros_like() if out is None else out
+    rhs_state.fill_zero()
+
+    rhs_psi = rhs_state["psi"]
+    rhs_psi[...] = p.vA * dz(phi_hat, grid)
+    rhs_psi[...] -= poisson_bracket(
+        phi_hat,
+        psi_hat,
+        grid,
+        fft,
+        workspace,
+        mask=dealias_mask,
     )
-    return _modal_average(density_hat, grid, backend)
+
+    rhs_omega = rhs_state["omega"]
+    rhs_omega[...] = p.vA * dz(lap_psi_hat, grid)
+    rhs_omega[...] -= poisson_bracket(
+        phi_hat,
+        omega_hat,
+        grid,
+        fft,
+        workspace,
+        mask=dealias_mask,
+    )
+    rhs_omega[...] += poisson_bracket(
+        psi_hat,
+        lap_psi_hat,
+        grid,
+        fft,
+        workspace,
+        mask=dealias_mask,
+    )
+
+    rhs_dbpar = rhs_state["dbpar"]
+    rhs_dbpar[...] = p.alpha * dz(upar_hat, grid)
+    rhs_dbpar[...] -= poisson_bracket(
+        phi_hat,
+        dbpar_hat,
+        grid,
+        fft,
+        workspace,
+        mask=dealias_mask,
+    )
+    rhs_dbpar[...] += p.alpha * poisson_bracket(
+        psi_hat,
+        upar_hat,
+        grid,
+        fft,
+        workspace,
+        mask=dealias_mask,
+    )
+
+    rhs_upar = rhs_state["upar"]
+    rhs_upar[...] = (p.vA**2) * dz(dbpar_hat, grid)
+    rhs_upar[...] -= poisson_bracket(
+        phi_hat,
+        upar_hat,
+        grid,
+        fft,
+        workspace,
+        mask=dealias_mask,
+    )
+    rhs_upar[...] += (p.vA**2) * poisson_bracket(
+        psi_hat,
+        dbpar_hat,
+        grid,
+        fft,
+        workspace,
+        mask=dealias_mask,
+    )
+
+    rhs_s = rhs_state["s"]
+    rhs_s[...] -= poisson_bracket(
+        phi_hat,
+        s_hat,
+        grid,
+        fft,
+        workspace,
+        mask=dealias_mask,
+    )
+
+    return rhs_state
 
 
-def compute_conserved_quantity_budgets(
-    state: State,
-    *,
-    grid: Any,
-    backend: Any,
-    params: Any,
-    linear_ops: dict[str, Any] | None = None,
-    extra_rhs_terms: dict[str, dict[str, float]] | None = None,
-) -> dict[str, dict[str, Any]]:
-    """Return conserved-quantity values plus named signed RHS contributions.
+def linear_matrix(kx: float, ky: float, kz: float, params: Any) -> np.ndarray:
+    """Return the 5x5 linear matrix for one Fourier mode.
 
-    Future equation sets can extend this structure with additional conserved
-    quantities and extra RHS terms without changing the scalar CSV schema
-    logic or the generic budget plotting script.
+    The field order is `[psi, omega, upar, dbpar, s]`. For `k_perp = 0`, the
+    `psi/omega` Alfvénic block is set to zero because the inverse perpendicular
+    Laplacian is not meaningful there in the RMHD subspace.
     """
 
-    rhs_terms: dict[str, float] = {}
-    if linear_ops is not None:
-        rhs_terms["dissipation"] = total_energy_dissipation_rhs(state, grid, backend, linear_ops, params)
-    if extra_rhs_terms is not None:
-        rhs_terms.update({name: float(value) for name, value in extra_rhs_terms.get("total_energy", {}).items()})
+    p = derived_parameters(params)
+    matrix = np.zeros((5, 5), dtype=np.complex128)
+    ikz = 1j * float(kz)
+    kperp2 = float(kx) ** 2 + float(ky) ** 2
 
-    return {
-        "total_energy": {
-            "value": total_energy(state, grid, backend, params),
-            "rhs_terms": rhs_terms,
-        }
-    }
+    if kperp2 > 0.0:
+        matrix[0, 1] = -p.vA * ikz / kperp2
+        matrix[1, 0] = -p.vA * ikz * kperp2
+
+    matrix[2, 3] = (p.vA**2) * ikz
+    matrix[3, 2] = p.alpha * ikz
+    return matrix
 
 
-def _field_dissipation_spec(
+def _dissipation_spec_for_field(
     params: Any,
     field_name: str,
-    dissipation_spec: Mapping[str, Mapping[str, float | int]] | None = None,
+    dissipation_spec: Mapping[str, Mapping[str, float | int]] | None,
 ) -> Mapping[str, float | int]:
     if dissipation_spec is not None:
         return dissipation_spec[field_name]
@@ -268,7 +252,7 @@ def dissipation_operator(
 ) -> Any:
     """Return the nonnegative diagonal damping operator `D_i(k)` for one field."""
 
-    spec = _field_dissipation_spec(params, field_name, dissipation_spec=dissipation_spec)
+    spec = _dissipation_spec_for_field(params, field_name, dissipation_spec)
     nu_perp = float(spec["nu_perp"])
     nu_par = float(spec["nu_par"])
     n_perp = int(spec["n_perp"])
@@ -299,151 +283,157 @@ def build_dissipation_operators(
     }
 
 
-def ideal_rhs(
+def perpendicular_energy_spectra(
     state: State,
     grid: Any,
-    fft: Any,
-    workspace: Any,
-    params: Any,
-    dealias_mask: Any | None = None,
-    out: State | None = None,
-) -> State:
-    """Return the Fourier-space RHS of the ideal homogeneous five-field system."""
+    backend: Any,
+    *,
+    bin_width: float | None = None,
+    params: Any | None = None,
+) -> dict[str, np.ndarray]:
+    """Return the standard S09 perpendicular shell spectra."""
 
-    vA = _get_param(params, "vA")
-    alpha = alpha_from_params(params)
+    xp = backend.xp
+    p = derived_parameters(params)
+    phi_hat = derive_phi_hat(state["omega"], grid)
+    kperp2 = grid.kperp2
 
-    psi_hat = state["psi"]
-    omega_hat = state["omega"]
-    upar_hat = state["upar"]
-    dbpar_hat = state["dbpar"]
-    s_hat = state["s"]
-
-    phi_hat = derive_phi_hat(omega_hat, grid)
-    lap_psi_hat = lap_perp(psi_hat, grid)
-
-    rhs_state = state.zeros_like() if out is None else out
-    rhs_state.fill_zero()
-
-    rhs_psi = rhs_state["psi"]
-    rhs_psi[...] = vA * dz(phi_hat, grid)
-    rhs_psi[...] -= poisson_bracket(
-        phi_hat,
-        psi_hat,
+    kperp, u_perp = perpendicular_shell_spectrum(
+        0.5 * kperp2 * (xp.abs(phi_hat) ** 2),
         grid,
-        fft,
-        workspace,
-        mask=dealias_mask,
+        backend,
+        bin_width=bin_width,
+    )
+    _, b_perp = perpendicular_shell_spectrum(
+        0.5 * kperp2 * (xp.abs(state["psi"]) ** 2),
+        grid,
+        backend,
+        bin_width=bin_width,
+    )
+    _, upar = perpendicular_shell_spectrum(
+        0.5 * (xp.abs(state["upar"]) ** 2),
+        grid,
+        backend,
+        bin_width=bin_width,
+    )
+    _, dbpar = perpendicular_shell_spectrum(
+        0.5 * p.dbpar_energy_weight * (xp.abs(state["dbpar"]) ** 2),
+        grid,
+        backend,
+        bin_width=bin_width,
+    )
+    _, entropy = perpendicular_shell_spectrum(
+        0.5 * p.entropy_energy_weight * (xp.abs(state["s"]) ** 2),
+        grid,
+        backend,
+        bin_width=bin_width,
+    )
+    return {
+        "kperp": kperp,
+        "u_perp": u_perp,
+        "b_perp": b_perp,
+        "upar": upar,
+        "dbpar": dbpar,
+        "s": entropy,
+    }
+
+
+def total_energy_modal_density(state: State, grid: Any, backend: Any, params: Any) -> Any:
+    """Return the modal quadratic density for the S09 total energy.
+
+    The Alfvénic fields are measured as physical perpendicular amplitudes:
+    `u_perp ~ grad_perp phi` and `b_perp ~ grad_perp psi`. Therefore the modal
+    density uses `k_perp^2 |phi_hat|^2` and `k_perp^2 |psi_hat|^2`, not raw
+    potential amplitudes.
+
+    In code variables:
+
+    `E = 0.5 * (|grad_perp phi|^2 + |grad_perp psi|^2 + |upar|^2`
+    `           + alpha^(-1) |dbpar|^2`
+    `           + [chi / (gamma^2 (gamma - 1))] |s|^2)`
+
+    with `gamma = 5/3`.
+    """
+
+    xp = backend.xp
+    p = derived_parameters(params)
+    phi_hat = derive_phi_hat(state["omega"], grid)
+    return (
+        0.5 * grid.kperp2 * (xp.abs(phi_hat) ** 2 + xp.abs(state["psi"]) ** 2)
+        + 0.5 * xp.abs(state["upar"]) ** 2
+        + 0.5 * p.dbpar_energy_weight * xp.abs(state["dbpar"]) ** 2
+        + 0.5 * p.entropy_energy_weight * xp.abs(state["s"]) ** 2
     )
 
-    rhs_omega = rhs_state["omega"]
-    rhs_omega[...] = vA * dz(lap_psi_hat, grid)
-    rhs_omega[...] -= poisson_bracket(
-        phi_hat,
-        omega_hat,
-        grid,
-        fft,
-        workspace,
-        mask=dealias_mask,
-    )
-    rhs_omega[...] += poisson_bracket(
-        psi_hat,
-        lap_psi_hat,
-        grid,
-        fft,
-        workspace,
-        mask=dealias_mask,
-    )
 
-    rhs_dbpar = rhs_state["dbpar"]
-    rhs_dbpar[...] = alpha * dz(upar_hat, grid)
-    rhs_dbpar[...] -= poisson_bracket(
-        phi_hat,
-        dbpar_hat,
-        grid,
-        fft,
-        workspace,
-        mask=dealias_mask,
-    )
-    rhs_dbpar[...] += alpha * poisson_bracket(
-        psi_hat,
-        upar_hat,
-        grid,
-        fft,
-        workspace,
-        mask=dealias_mask,
-    )
+def total_energy(state: State, grid: Any, backend: Any, params: Any) -> float:
+    """Return the volume-averaged total energy for this equation set."""
 
-    rhs_upar = rhs_state["upar"]
-    rhs_upar[...] = (vA**2) * dz(dbpar_hat, grid)
-    rhs_upar[...] -= poisson_bracket(
-        phi_hat,
-        upar_hat,
-        grid,
-        fft,
-        workspace,
-        mask=dealias_mask,
-    )
-    rhs_upar[...] += (vA**2) * poisson_bracket(
-        psi_hat,
-        dbpar_hat,
-        grid,
-        fft,
-        workspace,
-        mask=dealias_mask,
-    )
-
-    rhs_s = rhs_state["s"]
-    rhs_s[...] = 0.0
-    rhs_s[...] -= poisson_bracket(
-        phi_hat,
-        s_hat,
-        grid,
-        fft,
-        workspace,
-        mask=dealias_mask,
-    )
-
-    return rhs_state
+    density_hat = total_energy_modal_density(state, grid, backend, params)
+    return modal_average(density_hat, grid, backend)
 
 
-def rhs(
+def total_energy_dissipation_rhs(
     state: State,
     grid: Any,
-    fft: Any,
-    workspace: Any,
+    backend: Any,
+    linear_ops: dict[str, Any],
     params: Any,
-    dealias_mask: Any | None = None,
-    out: State | None = None,
-) -> State:
-    """Backward-compatible alias for the ideal RHS.
+) -> float:
+    """Return the signed dissipative contribution to `d_t E`.
 
-    Dissipation is intentionally not included here. The integrating-factor
-    timestepper applies the diagonal damping operators separately so the ideal
-    system remains directly accessible for invariant and linear-behavior tests.
+    Sign convention:
+
+    `d_t E = forcing + other_terms + dissipation`
+
+    so this term is negative when diagonal damping removes energy. The weights
+    match :func:`total_energy_modal_density` exactly.
     """
 
-    return ideal_rhs(state, grid, fft, workspace, params, dealias_mask=dealias_mask, out=out)
+    xp = backend.xp
+    p = derived_parameters(params)
+    phi_hat = derive_phi_hat(state["omega"], grid)
+    density_hat = (
+        -linear_ops["omega"] * grid.kperp2 * (xp.abs(phi_hat) ** 2)
+        - linear_ops["psi"] * grid.kperp2 * (xp.abs(state["psi"]) ** 2)
+        - linear_ops["upar"] * xp.abs(state["upar"]) ** 2
+        - p.dbpar_energy_weight * linear_ops["dbpar"] * xp.abs(state["dbpar"]) ** 2
+        - p.entropy_energy_weight * linear_ops["s"] * xp.abs(state["s"]) ** 2
+    )
+    return modal_average(density_hat, grid, backend)
 
 
-def linear_matrix(kx: float, ky: float, kz: float, params: Any) -> np.ndarray:
-    """Return the 5x5 linear matrix for one Fourier mode.
+def compute_conserved_quantity_budgets(
+    state: State,
+    *,
+    grid: Any,
+    backend: Any,
+    params: Any,
+    linear_ops: dict[str, Any] | None = None,
+    extra_rhs_terms: dict[str, dict[str, float]] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Return conserved-quantity values plus named signed RHS contributions."""
 
-    The field order is `[psi, omega, upar, dbpar, s]`. For `k_perp = 0`, the
-    `psi/omega` Alfvénic block is set to zero because the inverse perpendicular
-    Laplacian is not meaningful there in the RMHD subspace.
-    """
+    rhs_terms: dict[str, float] = {}
+    if linear_ops is not None:
+        rhs_terms["dissipation"] = total_energy_dissipation_rhs(
+            state,
+            grid,
+            backend,
+            linear_ops,
+            params,
+        )
+    if extra_rhs_terms is not None:
+        rhs_terms.update(
+            {
+                name: float(value)
+                for name, value in extra_rhs_terms.get("total_energy", {}).items()
+            }
+        )
 
-    vA = _get_param(params, "vA")
-    alpha = alpha_from_params(params)
-    matrix = np.zeros((5, 5), dtype=np.complex128)
-    ikz = 1j * float(kz)
-    kperp2 = float(kx) ** 2 + float(ky) ** 2
-
-    if kperp2 > 0.0:
-        matrix[0, 1] = -vA * ikz / kperp2
-        matrix[1, 0] = -vA * ikz * kperp2
-
-    matrix[2, 3] = (vA**2) * ikz
-    matrix[3, 2] = alpha * ikz
-    return matrix
+    return {
+        "total_energy": {
+            "value": total_energy(state, grid, backend, params),
+            "rhs_terms": rhs_terms,
+        }
+    }

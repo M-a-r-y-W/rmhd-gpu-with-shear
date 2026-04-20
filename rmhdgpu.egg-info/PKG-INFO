@@ -223,10 +223,15 @@ Meaning of the main settings:
 
 Currently supported initial conditions are:
 
+- `initial_condition.type` selects a registered builder in `rmhdgpu.initconds`
+- put initializer-specific options under `[initial_condition.parameters]` (flat keys under `[initial_condition]` still work for compatibility)
 - `type = "alfven_mode"` with `k_indices = [kx, ky, kz]`, `amplitude`, and `branch = "plus"` or `"minus"`
 - `type = "zero"`
 - `type = "aw_packet"`
 - `type = "decaying_low_modes"`
+
+Adding a new initial condition means adding and registering a builder in
+`rmhdgpu.initconds`.
 
 ## Example Inputs
 

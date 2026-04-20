@@ -5,7 +5,6 @@ rmhdgpu/auto_dissipation.py
 rmhdgpu/backend.py
 rmhdgpu/config.py
 rmhdgpu/errors.py
-rmhdgpu/example_setups.py
 rmhdgpu/fft.py
 rmhdgpu/forcing.py
 rmhdgpu/grid.py
@@ -41,9 +40,10 @@ rmhdgpu/examples/sanity_decay_spectra.py
 rmhdgpu/examples/sanity_forced_turbulence.py
 rmhdgpu/examples/sanity_single_mode_decay.py
 rmhdgpu/initconds/__init__.py
+rmhdgpu/initconds/builtin.py
 rmhdgpu/initconds/eigenmodes.py
-rmhdgpu/initconds/eigenmodes_placeholder.py
 rmhdgpu/initconds/random_modes.py
+rmhdgpu/initconds/testing.py
 rmhdgpu/profiling/__init__.py
 rmhdgpu/profiling/benchmark_backends.py
 rmhdgpu/profiling/gpu_sanity.py
@@ -66,6 +66,7 @@ rmhdgpu/tests/test_gpu_benchmarks.py
 rmhdgpu/tests/test_gpu_consistency.py
 rmhdgpu/tests/test_gpu_runtime_checks.py
 rmhdgpu/tests/test_grid.py
+rmhdgpu/tests/test_initcond_registry.py
 rmhdgpu/tests/test_initconds.py
 rmhdgpu/tests/test_integrating_factor.py
 rmhdgpu/tests/test_invariants.py

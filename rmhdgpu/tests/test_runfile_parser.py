@@ -15,6 +15,7 @@ def test_minimal_runfile_parses(tmp_path) -> None:
     assert settings.title == "Minimal case"
     assert settings.config.Nx == 16
     assert settings.config.backend == "numpy"
+    assert settings.config.equation_mode == "nonlinear"
     assert settings.output_dir == (tmp_path / "outputs").resolve()
     assert settings.initial_condition.type == "alfven_mode"
 
@@ -222,3 +223,42 @@ t_out_full = 0.0
     assert settings.config.t_out_spec == 0.5
     assert settings.config.t_out_full == 0.0
     assert settings.resolved_document["output"]["t_out_scal"] == 0.25
+
+
+def test_equation_mode_linear_parses_and_resolves(tmp_path) -> None:
+    input_file = tmp_path / "linear.input"
+    input_file.write_text(
+        """
+[equations]
+type = "s09"
+mode = "linear"
+
+[grid]
+Nx = 8
+Ny = 8
+Nz = 8
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    settings = resolve_run_settings(runfile_path=input_file)
+
+    assert settings.config.equation_set == "s09"
+    assert settings.config.equation_mode == "linear"
+    assert settings.resolved_document["equations"]["mode"] == "linear"
+
+
+def test_invalid_equation_mode_gives_helpful_error(tmp_path) -> None:
+    input_file = tmp_path / "bad_mode.input"
+    input_file.write_text(
+        """
+[equations]
+mode = "almost_linear"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="equation_mode must be 'nonlinear' or 'linear'"):
+        resolve_run_settings(runfile_path=input_file)

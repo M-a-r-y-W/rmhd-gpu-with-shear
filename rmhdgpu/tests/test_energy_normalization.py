@@ -77,7 +77,7 @@ def test_slow_energy_weights_match_linear_invariant() -> None:
     amplitude = 1.25 + 0.75j
     ix, iy, iz = (1, 1, 1)
     prefactor = _single_mode_prefactor(grid, amplitude=amplitude, iz=iz)
-    alpha = s09.alpha_from_params(config)
+    alpha = s09.derived_parameters(config).alpha
 
     upar_state = _single_mode_state(
         config,
@@ -134,7 +134,7 @@ def test_dissipation_budget_matches_weighted_energy_decay_for_single_modes() -> 
     amplitude = 0.8 + 0.6j
     ix, iy, iz = (1, 1, 1)
     prefactor = _single_mode_prefactor(grid, amplitude=amplitude, iz=iz)
-    alpha = s09.alpha_from_params(config)
+    alpha = s09.derived_parameters(config).alpha
     gamma = 5.0 / 3.0
     chi = float(config.cs2_over_vA2)
     entropy_weight = chi / (gamma**2 * (gamma - 1.0))

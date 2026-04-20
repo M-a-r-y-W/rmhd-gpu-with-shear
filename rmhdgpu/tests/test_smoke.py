@@ -4,7 +4,7 @@ from rmhdgpu import Config, FFTManager, Workspace, build_backend, build_grid, co
 from rmhdgpu.diagnostics.alfvenic import alfvenic_cross_helicity, alfvenic_energy
 from rmhdgpu.diagnostics.scalar import compute_scalar_diagnostics
 from rmhdgpu.equations import s09
-from rmhdgpu.initconds.eigenmodes import alfven_mode_state
+from rmhdgpu.initconds.eigenmodes_s09 import alfven_mode_state
 from rmhdgpu.masks import build_dealias_mask
 
 

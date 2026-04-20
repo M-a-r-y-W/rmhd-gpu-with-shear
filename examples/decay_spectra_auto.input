@@ -14,6 +14,9 @@
 title = "Qualitative decaying turbulence spectra (auto dissipation)"
 output_dir = "outputs"
 
+[equations]
+type = "s09"
+
 [grid]
 Nx = 128
 Ny = 128

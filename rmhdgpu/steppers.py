@@ -168,6 +168,7 @@ def compute_cfl_timestep(
     params: Any,
     dt_prev: float | None = None,
     workspace: Any | None = None,
+    equation_module: Any | None = None,
 ) -> float:
     """Estimate a CFL-limited timestep from perpendicular and parallel speeds.
 
@@ -181,13 +182,16 @@ def compute_cfl_timestep(
     `dt_min` and `dt_max` when those bounds are configured.
     """
 
-    from rmhdgpu.equations.s09 import alpha_from_params, derive_phi_hat
+    from rmhdgpu.equations import get_equation_module
     from rmhdgpu.operators import dx, dy
 
     backend = state.backend
     xp = backend.xp
 
-    phi_hat = derive_phi_hat(state["omega"], grid)
+    if equation_module is None:
+        equation_module = get_equation_module(getattr(params, "equation_set", "s09"))
+
+    phi_hat = equation_module.derive_phi_hat(state["omega"], grid)
     psi_hat = state["psi"]
     if workspace is None:
         ux = -fft.c2r(dy(phi_hat, grid))
@@ -234,12 +238,9 @@ def compute_cfl_timestep(
         _safe_dt(grid.dy, _speed_max(by)),
     ]
 
-    vA = float(getattr(params, "vA"))
-    alpha = alpha_from_params(params)
-    c_slow = vA * math.sqrt(alpha)
-
-    candidates.append(math.inf if vA <= 0.0 else grid.dz / vA)
-    candidates.append(math.inf if c_slow <= 0.0 else grid.dz / c_slow)
+    for speed in equation_module.characteristic_speeds(params):
+        speed_value = abs(float(speed))
+        candidates.append(math.inf if speed_value <= 0.0 else grid.dz / speed_value)
 
     finite_candidates = [value for value in candidates if math.isfinite(value) and value > 0.0]
     if finite_candidates:

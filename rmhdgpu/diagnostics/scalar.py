@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from rmhdgpu.diagnostics.alfvenic import alfvenic_energy
-from rmhdgpu.equations.s09 import total_energy as total_energy_s09
 
 
 def compute_scalar_diagnostics(
@@ -45,43 +44,39 @@ def compute_energy_diagnostics(
     backend: Any,
     params: Any,
     workspace: Any | None = None,
+    equation_module: Any | None = None,
 ) -> dict[str, float]:
-    """Return a small set of quadratic energy-like diagnostics.
-
-    The returned values are volume averages in real space:
-
-    - `alfvenic_energy = 0.5 <|grad_perp phi|^2 + |grad_perp psi|^2>`
-    - `upar_energy = 0.5 <upar^2>`
-    - `dbpar_energy = 0.5 <dbpar^2>`
-    - `entropy_variance = 0.5 <s^2>`
-    - `total_energy_proxy`, the simple unweighted sum of the above pieces
-    - `total_energy`, the corrected S09 quadratic form with
-      `upar -> 0.5 <upar^2>`, `dbpar -> 0.5 alpha^(-1) <dbpar^2>`, and
-      `s -> 0.5 [chi / (gamma^2 (gamma - 1))] <s^2>` for `gamma = 5/3`
-    """
+    """Return generic and equation-specific quadratic energy diagnostics."""
 
     xp = backend.xp
-    diagnostics = {
-        "alfvenic_energy": alfvenic_energy(state, grid, fft),
-    }
+    diagnostics: dict[str, float] = {}
 
-    if workspace is None:
-        upar_real = fft.c2r(state["upar"])
-        dbpar_real = fft.c2r(state["dbpar"])
-        entropy_real = fft.c2r(state["s"])
-    else:
-        upar_real = fft.c2r(state["upar"], out=workspace.real["r0"])
-        dbpar_real = fft.c2r(state["dbpar"], out=workspace.real["r1"])
-        entropy_real = fft.c2r(state["s"], out=workspace.real["r2"])
+    if "psi" in state.field_names and "omega" in state.field_names:
+        diagnostics["alfvenic_energy"] = alfvenic_energy(state, grid, fft)
 
-    diagnostics["upar_energy"] = backend.scalar_to_float(0.5 * xp.mean(upar_real**2))
-    diagnostics["dbpar_energy"] = backend.scalar_to_float(0.5 * xp.mean(dbpar_real**2))
-    diagnostics["entropy_variance"] = backend.scalar_to_float(0.5 * xp.mean(entropy_real**2))
-    diagnostics["total_energy_proxy"] = (
-        diagnostics["alfvenic_energy"]
-        + diagnostics["upar_energy"]
-        + diagnostics["dbpar_energy"]
-        + diagnostics["entropy_variance"]
-    )
-    diagnostics["total_energy"] = total_energy_s09(state, grid, backend, params)
+    scratch_names = ["r0", "r1", "r2", "r3", "r4"]
+    proxy_total = diagnostics.get("alfvenic_energy", 0.0)
+    for index, field_name in enumerate(state.field_names):
+        if field_name in {"psi", "omega"}:
+            continue
+        if workspace is None:
+            field_real = fft.c2r(state[field_name])
+        else:
+            field_real = fft.c2r(state[field_name], out=workspace.real[scratch_names[index % len(scratch_names)]])
+        value = backend.scalar_to_float(0.5 * xp.mean(field_real**2))
+        if field_name == "s":
+            diagnostics["entropy_variance"] = value
+        else:
+            diagnostics[f"{field_name}_energy"] = value
+        proxy_total += value
+
+    if diagnostics:
+        diagnostics["total_energy_proxy"] = proxy_total
+    if equation_module is not None:
+        diagnostics["total_energy"] = equation_module.total_energy(state, grid, backend, params)
+    elif hasattr(params, "equation_set"):
+        from rmhdgpu.equations import get_equation_module
+
+        module = get_equation_module(getattr(params, "equation_set"))
+        diagnostics["total_energy"] = module.total_energy(state, grid, backend, params)
     return diagnostics

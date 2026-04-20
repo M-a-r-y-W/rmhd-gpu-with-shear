@@ -9,7 +9,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from rmhdgpu.config import Config, default_config_dict
+from rmhdgpu.config import Config, default_config_dict_for_equation
+from rmhdgpu.equations import get_equation_module
 from rmhdgpu.initconds import normalize_initial_condition_parameters
 
 try:
@@ -27,6 +28,7 @@ _TOP_LEVEL_KEYS = {
     "title",
     "output_dir",
     "grid",
+    "equations",
     "time",
     "output",
     "backend",
@@ -37,6 +39,7 @@ _TOP_LEVEL_KEYS = {
     "initial_condition",
 }
 _SECTION_KEYS = {
+    "equations": {"type", "mode"},
     "grid": {"Nx", "Ny", "Nz", "Lx", "Ly", "Lz"},
     "time": {
         "tmax",
@@ -52,7 +55,7 @@ _SECTION_KEYS = {
     "output": {"t_out_scal", "t_out_spec", "t_out_full"},
     "backend": {"backend", "fft_workers", "real_dtype", "complex_dtype"},
     "runtime": {"runtime_check_every", "progress_output_every", "fail_on_nonfinite", "dealias", "dealias_mode"},
-    "physics": {"vA", "cs2_over_vA2"},
+    "physics": {"vA", "cs2_over_vA2", "N2"},
     "forcing": {"use_forcing", "n_min_force", "n_max_force", "alpha_force", "forcing_seed", "force_amplitudes"},
 }
 _AUTO_DISSIPATION_KEYS = {
@@ -69,12 +72,13 @@ _AUTO_DISSIPATION_KEYS = {
     "max_update_factor",
 }
 _SECTION_TO_CONFIG_KEYS = {
+    "equations": {"equation_set", "equation_mode"},
     "grid": {"Nx", "Ny", "Nz", "Lx", "Ly", "Lz"},
     "time": {"tmax", "dt_init", "dt_min", "dt_max", "cfl_number", "use_variable_dt", "t_out_scal", "t_out_spec", "t_out_full"},
     "output": {"t_out_scal", "t_out_spec", "t_out_full"},
     "backend": {"backend", "fft_workers", "real_dtype", "complex_dtype"},
     "runtime": {"runtime_check_every", "progress_output_every", "fail_on_nonfinite", "dealias", "dealias_mode"},
-    "physics": {"vA", "cs2_over_vA2"},
+    "physics": {"vA", "cs2_over_vA2", "N2"},
     "forcing": {"use_forcing", "n_min_force", "n_max_force", "alpha_force", "forcing_seed"},
 }
 
@@ -87,16 +91,21 @@ class InitialConditionSpec:
     parameters: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_document(cls, data: dict[str, Any] | None) -> "InitialConditionSpec":
+    def from_document(
+        cls,
+        data: dict[str, Any] | None,
+        *,
+        default_type: str = "alfven_mode",
+    ) -> "InitialConditionSpec":
         if data is None:
             return cls(
-                type="alfven_mode",
-                parameters=normalize_initial_condition_parameters("alfven_mode", {}),
+                type=default_type,
+                parameters=normalize_initial_condition_parameters(default_type, {}),
             )
         if not isinstance(data, dict):
             raise ValueError("initial_condition must be a TOML table.")
 
-        kind = str(data.get("type", "alfven_mode"))
+        kind = str(data.get("type", default_type))
         parameters_table = data.get("parameters")
         if parameters_table is not None and not isinstance(parameters_table, dict):
             raise ValueError("initial_condition.parameters must be a TOML table.")
@@ -283,7 +292,12 @@ def cli_overrides_from_args(args: argparse.Namespace) -> dict[str, Any]:
         if cli_key in values:
             _set_section("runtime", config_key, values[cli_key])
 
-    physics_map = {"vA": "vA", "cs2_over_vA2": "cs2_over_vA2"}
+    if "equation_set" in values:
+        overrides.setdefault("equations", {})["type"] = values["equation_set"]
+    if "equation_mode" in values:
+        overrides.setdefault("equations", {})["mode"] = values["equation_mode"]
+
+    physics_map = {"vA": "vA", "cs2_over_vA2": "cs2_over_vA2", "N2": "N2"}
     for cli_key, config_key in physics_map.items():
         if cli_key in values:
             _set_section("physics", config_key, values[cli_key])
@@ -327,13 +341,21 @@ def cli_overrides_from_args(args: argparse.Namespace) -> dict[str, Any]:
 
 def _apply_section_to_config_dict(config_values: dict[str, Any], section_name: str, section_data: dict[str, Any]) -> None:
     for key, value in section_data.items():
+        if section_name == "equations" and key == "type":
+            config_values["equation_set"] = str(value)
+            continue
+        if section_name == "equations" and key == "mode":
+            config_values["equation_mode"] = str(value)
+            continue
         if key in _SECTION_TO_CONFIG_KEYS.get(section_name, set()):
             config_values[key] = deepcopy(value)
 
 
 def _document_to_config_values(document: dict[str, Any]) -> dict[str, Any]:
-    config_values = default_config_dict()
-    for section_name in ("grid", "time", "output", "backend", "runtime", "physics", "forcing"):
+    equations = _require_table(document, "equations")
+    equation_set = str(equations.get("type", "s09"))
+    config_values = default_config_dict_for_equation(equation_set)
+    for section_name in ("equations", "grid", "time", "output", "backend", "runtime", "physics", "forcing"):
         section_data = _require_table(document, section_name)
         _apply_section_to_config_dict(config_values, section_name, section_data)
 
@@ -377,10 +399,11 @@ def _resolved_document(
     output_dir_setting: str,
     initial_condition: InitialConditionSpec,
 ) -> dict[str, Any]:
-    config_values = deepcopy(default_config_dict())
+    config_values = deepcopy(default_config_dict_for_equation(config.equation_set))
     config_values.update(
         {
             "Nx": config.Nx,
+            "equation_mode": config.equation_mode,
             "Ny": config.Ny,
             "Nz": config.Nz,
             "Lx": config.Lx,
@@ -406,19 +429,24 @@ def _resolved_document(
             "dealias_mode": config.dealias_mode,
             "vA": config.vA,
             "cs2_over_vA2": config.cs2_over_vA2,
+            "N2": config.N2,
             "use_forcing": config.use_forcing,
             "n_min_force": config.n_min_force,
             "n_max_force": config.n_max_force,
             "alpha_force": config.alpha_force,
             "forcing_seed": config.forcing_seed,
             "force_amplitudes": deepcopy(config.force_amplitudes),
-        "dissipation": deepcopy(config.dissipation),
-        "auto_dissipation": asdict(config.auto_dissipation),
-    }
+            "dissipation": deepcopy(config.dissipation),
+            "auto_dissipation": asdict(config.auto_dissipation),
+        }
     )
     return {
         "title": title,
         "output_dir": output_dir_setting,
+        "equations": {
+            "type": config.equation_set,
+            "mode": config.equation_mode,
+        },
         "grid": {
             "Nx": config_values["Nx"],
             "Ny": config_values["Ny"],
@@ -456,6 +484,7 @@ def _resolved_document(
         "physics": {
             "vA": config_values["vA"],
             "cs2_over_vA2": config_values["cs2_over_vA2"],
+            "N2": config_values["N2"],
         },
         "forcing": {
             "use_forcing": config_values["use_forcing"],
@@ -494,7 +523,12 @@ def resolve_run_settings(
         raise ValueError(f"Invalid configuration from {source}: {exc}.") from exc
 
     try:
-        initial_condition = InitialConditionSpec.from_document(document.get("initial_condition"))
+        equation_module = get_equation_module(config.equation_set)
+        default_initial_condition = getattr(equation_module, "DEFAULT_INITIAL_CONDITION", "zero")
+        initial_condition = InitialConditionSpec.from_document(
+            document.get("initial_condition"),
+            default_type=default_initial_condition,
+        )
     except ValueError as exc:
         source = f"run file {input_file}" if input_file is not None else "command line arguments"
         raise ValueError(f"Invalid initial_condition from {source}: {exc}.") from exc

@@ -13,6 +13,9 @@
 title = "Qualitative Alfvén-wave packet translation"
 output_dir = "outputs"
 
+[equations]
+type = "s09"
+
 [grid]
 Nx = 32
 Ny = 32

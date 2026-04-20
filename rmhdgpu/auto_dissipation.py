@@ -41,7 +41,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from rmhdgpu.config import AutoDissipationSettings
-from rmhdgpu.equations import s09
+from rmhdgpu.fourier_diagnostics import modal_density_average
 
 
 def disabled_auto_dissipation_diagnostics() -> dict[str, float]:
@@ -62,6 +62,7 @@ class AutoDissipationController:
     """Track and update one common effective perpendicular hyperdissipation."""
 
     settings: AutoDissipationSettings
+    equation_module: Any
     field_names: list[str]
     grid: Any
     backend: Any
@@ -77,6 +78,7 @@ class AutoDissipationController:
         cls,
         *,
         settings: AutoDissipationSettings,
+        equation_module: Any,
         field_names: list[str],
         grid: Any,
         backend: Any,
@@ -111,6 +113,7 @@ class AutoDissipationController:
 
         return cls(
             settings=settings,
+            equation_module=equation_module,
             field_names=list(field_names),
             grid=grid,
             backend=backend,
@@ -128,8 +131,8 @@ class AutoDissipationController:
     def update(self, state: Any, params: Any) -> float:
         """Refresh the effective coefficient from the current Fourier state."""
 
-        density_hat = s09.total_energy_modal_density(state, self.grid, self.backend, params)
-        self.last_Ed = s09.modal_density_average(
+        density_hat = self.equation_module.total_energy_modal_density(state, self.grid, self.backend, params)
+        self.last_Ed = modal_density_average(
             density_hat,
             self.grid,
             self.backend,

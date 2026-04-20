@@ -303,7 +303,15 @@ def main() -> None:
             )
         if sample_index < len(sample_times) and np.isclose(event_time, sample_times[sample_index]):
             energy_history.append(compute_energy_diagnostics(current, grid, fft, backend, config, workspace=workspace))
-            spectra_history.append(perpendicular_energy_spectrum_from_state(current, grid, backend))
+            spectra_history.append(
+                perpendicular_energy_spectrum_from_state(
+                    current,
+                    grid,
+                    backend,
+                    equation_module=s09,
+                    params=config,
+                )
+            )
             sample_index += 1
         if frame_index < len(frame_times) and np.isclose(event_time, frame_times[frame_index]):
             frame_records.append(

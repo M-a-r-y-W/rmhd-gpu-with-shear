@@ -7,8 +7,9 @@ from rmhdgpu.config import Config
 from rmhdgpu.equations import s09
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
-from rmhdgpu.initconds.eigenmodes import entropy_mode_state
-from rmhdgpu.initconds.random_modes import random_band_limited_field
+from rmhdgpu.initconds import build_initial_state
+from rmhdgpu.initconds.eigenmodes_s09 import entropy_mode_state
+from rmhdgpu.initconds.testing import decaying_low_modes_test_parameters
 from rmhdgpu.masks import build_dealias_mask
 from rmhdgpu.state import State
 from rmhdgpu.workspace import Workspace
@@ -28,7 +29,7 @@ def test_rhs_zero_state() -> None:
     config, backend, grid, fft, workspace, mask = _build_context()
     state = State(grid, backend, field_names=s09.FIELD_NAMES)
 
-    rhs_state = s09.rhs(state, grid, fft, workspace, config, dealias_mask=mask)
+    rhs_state = s09.ideal_rhs(state, grid, fft, workspace, config, dealias_mask=mask)
 
     for name in rhs_state.field_names:
         assert np.allclose(
@@ -41,21 +42,18 @@ def test_rhs_zero_state() -> None:
 
 def test_rhs_shapes_and_field_names() -> None:
     config, backend, grid, fft, workspace, mask = _build_context()
-    state = State(grid, backend, field_names=s09.FIELD_NAMES)
+    state = build_initial_state(
+        "decaying_low_modes",
+        parameters=decaying_low_modes_test_parameters(0.2),
+        grid=grid,
+        backend=backend,
+        fft=fft,
+        dealias_mask=mask,
+        field_names=s09.FIELD_NAMES,
+        params=config,
+    )
 
-    for offset, name in enumerate(state.field_names):
-        state[name][...] = random_band_limited_field(
-            grid=grid,
-            backend=backend,
-            fft=fft,
-            kmin=1.0,
-            kmax=3.0,
-            seed=100 + offset,
-            rms=0.2,
-            dealias_mask=mask,
-        )
-
-    rhs_state = s09.rhs(state, grid, fft, workspace, config, dealias_mask=mask)
+    rhs_state = s09.ideal_rhs(state, grid, fft, workspace, config, dealias_mask=mask)
 
     assert rhs_state.field_names == s09.FIELD_NAMES
     for name in rhs_state.field_names:
@@ -63,9 +61,20 @@ def test_rhs_shapes_and_field_names() -> None:
         assert rhs_state[name].dtype == grid.complex_dtype
 
 
+def test_derived_parameters_collect_s09_scalars() -> None:
+    config, _, _, _, _, _ = _build_context()
+    params = s09.derived_parameters(config)
+
+    assert params.vA == config.vA
+    assert params.chi == config.cs2_over_vA2
+    assert params.alpha == config.cs2_over_vA2 / (1.0 + config.cs2_over_vA2)
+    assert params.gamma == 5.0 / 3.0
+    assert params.dbpar_energy_weight == 1.0 / params.alpha
+
+
 def test_linear_matrix_eigenvalues() -> None:
     config, _, _, _, _, _ = _build_context()
-    alpha = s09.alpha_from_params(config)
+    alpha = s09.derived_parameters(config).alpha
     kz = 1.25
 
     matrix = s09.linear_matrix(kx=1.0, ky=2.0, kz=kz, params=config)
@@ -96,7 +105,7 @@ def test_entropy_rhs_when_only_s_present() -> None:
         amplitude=1.0,
     )
 
-    rhs_state = s09.rhs(state, grid, fft, workspace, config, dealias_mask=mask)
+    rhs_state = s09.ideal_rhs(state, grid, fft, workspace, config, dealias_mask=mask)
 
     for name in rhs_state.field_names:
         assert np.allclose(

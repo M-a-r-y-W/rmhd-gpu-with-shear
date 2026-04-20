@@ -8,7 +8,9 @@
 
 Current solver scope includes:
 
-- ideal homogeneous S09 equations
+- multiple equation sets selected from `.input` files
+- ideal homogeneous S09 five-field equations
+- low-beta stratified three-field RMHD equations with a non-conservative energy budget
 - anisotropic dissipation with integrating-factor time stepping
 - optional auto-dissipation with one common adaptive perpendicular coefficient
 - variable timestep support
@@ -67,6 +69,28 @@ my_case/
 
 If `output_dir` is omitted in a `.input` file, the driver writes to `outputs` relative to the input-file location. In CLI-only mode, the default is `./outputs` relative to the current working directory.
 
+Equation sets are selected in the input file:
+
+```toml
+[equations]
+type = "s09"
+# Optional: use "linear" to omit nonlinear RHS terms while keeping the same
+# timestepper, dissipation, forcing, diagnostics, and outputs.
+mode = "nonlinear"
+```
+
+Available equation sets are:
+
+- `s09`: homogeneous five-field system with fields `psi`, `omega`, `upar`, `dbpar`, `s`
+- `low_beta_stratified`: three-field system with fields `psi`, `omega`, `a`
+
+The selected equation set determines the evolved field list, so manual dissipation and forcing-amplitude blocks must use the matching field names.
+
+The optional `[equations] mode = "linear"` switch is useful for tests and
+teaching examples. It runs the same solver workflow and still calls
+`ideal_rhs`, but replaces the Poisson-bracket operator by zero so nonlinear
+terms are omitted. If `mode` is omitted, the default is `"nonlinear"`.
+
 ## Diagnostics Output
 
 Diagnostics are controlled independently through the `[output]` section:
@@ -123,6 +147,10 @@ The driver accepts TOML-based `.input` files with sections such as:
 title = "Small forced turbulence test"
 output_dir = "outputs"
 
+[equations]
+type = "s09"
+# mode defaults to "nonlinear"; set mode = "linear" for linearized runs.
+
 [grid]
 Nx = 128
 Ny = 128
@@ -164,19 +192,22 @@ n_par = 3
 Supported sections are:
 
 - top level: `title`, `output_dir`
+- `[equations]`: `type`
 - `[grid]`: `Nx`, `Ny`, `Nz`, `Lx`, `Ly`, `Lz`
 - `[time]`: `tmax`, `dt_init`, `dt_min`, `dt_max`, `cfl_number`, `use_variable_dt`
 - `[output]`: `t_out_scal`, `t_out_spec`, `t_out_full`
 - `[backend]`: `backend`, `fft_workers`, `real_dtype`, `complex_dtype`
 - `[runtime]`: `runtime_check_every`, `progress_output_every`, `fail_on_nonfinite`, `dealias`, `dealias_mode`
-- `[physics]`: `vA`, `cs2_over_vA2`
+- `[physics]`: `vA`, `cs2_over_vA2`, `N2`
 - `[forcing]` and `[forcing.force_amplitudes]`
 - `[dissipation]` for optional auto-dissipation control
 - `[dissipation.<field>]` for manual per-field dissipation
 - `[initial_condition]`
 
 Manual dissipation remains the default. In that mode, set per-field blocks such
-as `[dissipation.psi]` and `[dissipation.omega]` exactly as before.
+as `[dissipation.psi]` and `[dissipation.omega]` exactly as before. The valid
+field names come from `[equations].type`; for example `low_beta_stratified`
+accepts `[dissipation.psi]`, `[dissipation.omega]`, and `[dissipation.a]`.
 
 Auto dissipation is useful when you want one common hyperdissipation
 coefficient chosen automatically from the fluctuation amplitude near a target
@@ -218,9 +249,37 @@ Currently supported initial conditions are:
 - `type = "zero"`
 - `type = "aw_packet"`
 - `type = "decaying_low_modes"`
+- `type = "low_beta_stratified_mode"` for the low-beta stratified linear eigensystem
 
 Adding a new initial condition means adding and registering a builder in
 `rmhdgpu.initconds`.
+
+Small low-beta stratified example:
+
+```toml
+[equations]
+type = "low_beta_stratified"
+
+[physics]
+vA = 1.0
+N2 = 0.25
+
+[initial_condition]
+type = "low_beta_stratified_mode"
+
+[initial_condition.parameters]
+k_indices = [0, 1, 0]
+mode = "unstable_growing"
+amplitude = 0.02
+
+[dissipation.a]
+nu_perp = 1e-4
+nu_par = 0.0
+n_perp = 2
+n_par = 1
+```
+
+For this equation set, scalar diagnostics include `total_energy_rhs_stratification` in addition to the usual dissipation, forcing, and total RHS budget columns.
 
 ## Example Inputs
 
@@ -231,6 +290,7 @@ The repository root includes ready-to-run example inputs:
 - [`examples/decay_spectra_auto.input`](examples/decay_spectra_auto.input)
 - [`examples/decay_spectra_gpu.input`](examples/decay_spectra_gpu.input)
 - [`examples/forced_turbulence.input`](examples/forced_turbulence.input)
+- [`examples/low_beta_stratified.input`](examples/low_beta_stratified.input)
 
 For example:
 
@@ -238,6 +298,7 @@ For example:
 python -m rmhdgpu.run examples/decay_spectra.input
 python -m rmhdgpu.run examples/decay_spectra_auto.input
 python -m rmhdgpu.run examples/decay_spectra_gpu.input
+python -m rmhdgpu.run examples/low_beta_stratified.input
 ```
 
 ## Plotting Saved Output
