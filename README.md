@@ -110,6 +110,10 @@ Outputs are:
 - `spectra.csv`: tidy/long CSV with columns `time`, `step`, `quantity`, `kperp`, `value`
 - `fullfields/fullfield_0001.h5`, `fullfield_0002.h5`, ...: one HDF5 snapshot per output time
 
+Scalar diagnostics are split into generic per-field columns such as
+`psi_rms`, `psi_mean`, and `psi_max_abs`, plus equation-specific quantities
+defined by the selected equation module.
+
 The scalar CSV also carries saved conserved-quantity budget columns. For the
 current total-energy budget these include:
 
@@ -252,7 +256,10 @@ Currently supported initial conditions are:
 - `type = "low_beta_stratified_mode"` for the low-beta stratified linear eigensystem
 
 Adding a new initial condition means adding and registering a builder in
-`rmhdgpu.initconds`.
+`rmhdgpu.initconds`. For equation-specific eigenmodes, keep the reusable
+eigenvector construction in a small module such as
+`rmhdgpu/initconds/eigenmodes_<equation>.py`, and keep `builtin.py` as the
+thin registry layer for input-file selectable names.
 
 Small low-beta stratified example:
 

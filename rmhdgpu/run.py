@@ -18,9 +18,8 @@ from rmhdgpu.auto_dissipation import (
     disabled_auto_dissipation_diagnostics,
 )
 from rmhdgpu.backend import build_backend
-from rmhdgpu.diagnostics.budget import flatten_conserved_quantity_budgets
 from rmhdgpu.diagnostics.spectra import perpendicular_energy_spectrum_from_state
-from rmhdgpu.diagnostics.scalar import compute_energy_diagnostics, compute_scalar_diagnostics
+from rmhdgpu.diagnostics.scalar import compute_scalar_diagnostics
 from rmhdgpu.errors import NonFiniteStateError
 from rmhdgpu.equations import available_equation_sets, get_equation_module
 from rmhdgpu.fft import FFTManager
@@ -229,6 +228,7 @@ def _diagnostics_row(
     params: Any,
     workspace: Any,
     equation_module: Any,
+    linear_ops: dict[str, Any] | None = None,
     budget_rhs_terms: dict[str, dict[str, float]] | None = None,
     extra_scalar_diagnostics: dict[str, float] | None = None,
 ) -> dict[str, float | int]:
@@ -239,29 +239,15 @@ def _diagnostics_row(
     }
     row.update(compute_scalar_diagnostics(state, grid, fft, backend, workspace=workspace))
     row.update(
-        compute_energy_diagnostics(
+        equation_module.compute_equation_scalar_diagnostics(
             state,
-            grid,
-            fft,
-            backend,
-            params,
+            grid=grid,
+            fft=fft,
+            backend=backend,
+            params=params,
             workspace=workspace,
-            equation_module=equation_module,
-        )
-    )
-    budgets = equation_module.compute_conserved_quantity_budgets(
-        state,
-        grid=grid,
-        backend=backend,
-        params=params,
-    )
-    if budget_rhs_terms is not None:
-        for quantity_name, rhs_terms in budget_rhs_terms.items():
-            budgets.setdefault(quantity_name, {"value": 0.0, "rhs_terms": {}})
-            budgets[quantity_name]["rhs_terms"] = dict(rhs_terms)
-    row.update(
-        flatten_conserved_quantity_budgets(
-            budgets
+            linear_ops=linear_ops,
+            budget_rhs_terms=budget_rhs_terms,
         )
     )
     if extra_scalar_diagnostics is not None:
@@ -468,6 +454,7 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
                     params=config,
                     workspace=workspace,
                     equation_module=equation_module,
+                    linear_ops=linear_ops,
                     budget_rhs_terms=_averaged_budget_terms(),
                     extra_scalar_diagnostics=auto_dissipation_diagnostics,
                 )

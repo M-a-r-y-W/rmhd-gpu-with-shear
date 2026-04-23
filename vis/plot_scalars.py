@@ -38,6 +38,7 @@ def _default_columns(fieldnames: list[str]) -> list[str]:
         "alfvenic_energy",
         "upar_energy",
         "dbpar_energy",
+        "a_energy",
         "entropy_variance",
         "total_energy_proxy",
         "alfvenic_cross_helicity",

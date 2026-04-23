@@ -22,6 +22,8 @@ from typing import Any
 
 import numpy as np
 
+from rmhdgpu.diagnostics.budget import flatten_conserved_quantity_budgets
+from rmhdgpu.diagnostics.scalar import STANDARD_ENERGY_SCALAR_DIAGNOSTIC_INFO
 from rmhdgpu.diagnostics.spectra import perpendicular_shell_spectrum
 from rmhdgpu.fourier_diagnostics import modal_average, modal_inner_product_average
 from rmhdgpu.operators import dy, dz, inv_lap_perp, lap_perp, poisson_bracket
@@ -31,6 +33,18 @@ from rmhdgpu.state import State
 EQUATION_SET_NAME = "low_beta_stratified"
 FIELD_NAMES = ["psi", "omega", "a"]
 DEFAULT_INITIAL_CONDITION = "low_beta_stratified_mode"
+
+# Scalar diagnostic names provided by this equation module. The standard
+# `total_energy*` names are what budget plotting tools expect. The
+# stratification RHS is equation-specific and follows the same
+# `total_energy_rhs_<name>` convention.
+SCALAR_DIAGNOSTIC_INFO = {
+    **STANDARD_ENERGY_SCALAR_DIAGNOSTIC_INFO,
+    "total_energy_rhs_stratification": "Signed ideal stratification contribution to d_t total_energy.",
+    "alfvenic_energy": "Alfvenic part of the low-beta energy: 0.5 <|grad phi|^2 + |grad psi|^2>.",
+    "a_energy": "Stratification-field energy partition: 0.5 <a^2 / N2>.",
+    "total_energy_proxy": "Sum of alfvenic_energy and a_energy for plotting convenience.",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,6 +282,22 @@ def total_energy(state: State, grid: Any, backend: Any, params: Any) -> float:
     return modal_average(density_hat, grid, backend)
 
 
+def alfvenic_energy(state: State, grid: Any, backend: Any) -> float:
+    """Return the low-beta Alfvenic energy partition."""
+
+    xp = backend.xp
+    phi_hat = derive_phi_hat(state["omega"], grid)
+    density_hat = 0.5 * grid.kperp2 * (xp.abs(phi_hat) ** 2 + xp.abs(state["psi"]) ** 2)
+    return modal_average(density_hat, grid, backend)
+
+
+def a_energy(state: State, grid: Any, backend: Any, params: Any) -> float:
+    """Return the stratification-field energy partition."""
+
+    p = derived_parameters(params)
+    return modal_average(0.5 * (backend.xp.abs(state["a"]) ** 2) / p.N2, grid, backend)
+
+
 def total_energy_stratification_rhs(state: State, grid: Any, backend: Any, params: Any) -> float:
     """Return the signed ideal stratification contribution `2 <u_x a>`."""
 
@@ -338,3 +368,49 @@ def compute_conserved_quantity_budgets(
             "rhs_terms": rhs_terms,
         }
     }
+
+
+def compute_equation_scalar_diagnostics(
+    state: State,
+    *,
+    grid: Any,
+    fft: Any,
+    backend: Any,
+    params: Any,
+    workspace: Any | None = None,
+    linear_ops: dict[str, Any] | None = None,
+    budget_rhs_terms: dict[str, dict[str, float]] | None = None,
+    extra_rhs_terms: dict[str, dict[str, float]] | None = None,
+) -> dict[str, float]:
+    """Return low-beta-stratified scalar diagnostics.
+
+    Equation modules own scientifically meaningful scalar diagnostics. The
+    standard `total_energy` / `total_energy_rhs_*` names are what generic
+    budget plotting tools expect; equation-specific source terms should follow
+    the same `total_energy_rhs_<name>` pattern.
+    """
+
+    alfvenic = alfvenic_energy(state, grid, backend)
+    stratification_energy = a_energy(state, grid, backend, params)
+    diagnostics = {
+        "alfvenic_energy": alfvenic,
+        "a_energy": stratification_energy,
+        "total_energy_proxy": alfvenic + stratification_energy,
+    }
+
+    budgets = compute_conserved_quantity_budgets(
+        state,
+        grid=grid,
+        backend=backend,
+        params=params,
+        linear_ops=linear_ops,
+        extra_rhs_terms=extra_rhs_terms,
+    )
+    rhs_terms = budgets["total_energy"].setdefault("rhs_terms", {})
+    if budget_rhs_terms is not None and "total_energy" in budget_rhs_terms:
+        rhs_terms.clear()
+        rhs_terms.update({name: float(value) for name, value in budget_rhs_terms["total_energy"].items()})
+    rhs_terms.setdefault("dissipation", 0.0)
+    rhs_terms.setdefault("forcing", 0.0)
+    diagnostics.update(flatten_conserved_quantity_budgets(budgets))
+    return diagnostics

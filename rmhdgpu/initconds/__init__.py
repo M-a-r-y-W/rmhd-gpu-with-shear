@@ -27,6 +27,7 @@ from rmhdgpu.initconds.eigenmodes_s09 import (
     entropy_mode_state,
     slow_mode_state,
 )
+from rmhdgpu.initconds.eigenmodes_low_beta_stratified import low_beta_stratified_mode_state
 from rmhdgpu.initconds.testing import single_mode_field
 
 __all__ = [
@@ -43,6 +44,7 @@ __all__ = [
     "list_initial_condition_types",
     "low_mode_real_field",
     "low_beta_stratified_mode",
+    "low_beta_stratified_mode_state",
     "normalize_initial_condition_parameters",
     "register_initial_condition",
     "single_mode_field",

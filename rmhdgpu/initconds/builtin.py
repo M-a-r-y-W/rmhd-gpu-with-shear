@@ -8,6 +8,11 @@ conditions. Add a new built-in initial condition by:
 2. writing a small parameter normalizer for that builder
 3. registering the builder with `@register_initial_condition("name", ...)`
 
+For equation-specific eigenmode algebra, prefer adding a small helper module
+such as `eigenmodes_<equation>.py` and keeping the registered builder here as a
+thin wrapper. That keeps this registry readable as more equation sets are
+added.
+
 `rmhdgpu.run` and the example scripts both dispatch through
 `build_initial_state(...)` so every registered name follows the same path.
 """
@@ -20,11 +25,11 @@ from typing import Any
 
 import numpy as np
 
+from rmhdgpu.initconds.eigenmodes_low_beta_stratified import low_beta_stratified_mode_state
 from rmhdgpu.initconds.eigenmodes_s09 import alfven_mode_state
 from rmhdgpu.masks import apply_mask
 from rmhdgpu.operators import dx, dy, lap_perp
 from rmhdgpu.state import State
-from rmhdgpu.equations import get_equation_module
 
 
 InitialConditionBuilder = Callable[..., State]
@@ -416,42 +421,20 @@ def low_beta_stratified_mode(
     field_names: Sequence[str],
     params: Any,
 ) -> State:
-    """Build a single linear eigenmode using the equation module eigensystem."""
+    """Build a single low-beta stratified linear eigenmode."""
 
     normalized = _normalize_low_beta_mode_parameters(_as_parameter_dict(parameters))
     _require_fields("low_beta_stratified_mode", field_names, ("psi", "omega", "a"))
-    equation_module = get_equation_module("low_beta_stratified")
 
-    ix_raw, iy_raw, iz = normalized["k_indices"]
-    if iz < 0 or iz > grid.Nz // 2:
-        raise ValueError(f"k_indices[2] must satisfy 0 <= kz <= Nz//2; got {iz}.")
-    ix = ix_raw % grid.Nx
-    iy = iy_raw % grid.Ny
-    kx = backend.scalar_to_float(grid.kx[ix, 0, 0])
-    ky = backend.scalar_to_float(grid.ky[0, iy, 0])
-    kz = backend.scalar_to_float(grid.kz[0, 0, iz])
-
-    matrix = equation_module.linear_matrix(kx=kx, ky=ky, kz=kz, params=params)
-    eigenvalues, eigenvectors = np.linalg.eig(matrix)
-    mode = normalized["mode"]
-    if mode == "unstable_growing":
-        selected = int(np.argmax(eigenvalues.real))
-    elif mode == "unstable_decaying":
-        selected = int(np.argmin(eigenvalues.real))
-    elif mode == "stable_plus":
-        selected = int(np.argmax(eigenvalues.imag))
-    else:
-        selected = int(np.argmin(eigenvalues.imag))
-
-    vector = eigenvectors[:, selected]
-    scale = np.max(np.abs(vector))
-    if scale <= 0.0:
-        raise ValueError("Selected low-beta eigenvector has zero amplitude.")
-    vector = normalized["amplitude"] * vector / scale
-
-    state = State(grid, backend, field_names=list(field_names))
-    for component, field_name in enumerate(equation_module.FIELD_NAMES):
-        state[field_name][ix, iy, iz] = vector[component]
+    state = low_beta_stratified_mode_state(
+        grid=grid,
+        backend=backend,
+        field_names=list(field_names),
+        k_indices=normalized["k_indices"],
+        amplitude=normalized["amplitude"],
+        mode=normalized["mode"],
+        params=params,
+    )
     if dealias_mask is not None:
         state.apply_mask(dealias_mask)
     return state

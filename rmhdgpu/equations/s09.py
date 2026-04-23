@@ -33,6 +33,8 @@ from typing import Any
 
 import numpy as np
 
+from rmhdgpu.diagnostics.budget import flatten_conserved_quantity_budgets
+from rmhdgpu.diagnostics.scalar import STANDARD_ENERGY_SCALAR_DIAGNOSTIC_INFO
 from rmhdgpu.fourier_diagnostics import modal_average
 from rmhdgpu.operators import dz, inv_lap_perp, lap_perp, poisson_bracket
 from rmhdgpu.diagnostics.spectra import perpendicular_shell_spectrum
@@ -43,6 +45,18 @@ EQUATION_SET_NAME = "s09"
 FIELD_NAMES = ["psi", "omega", "upar", "dbpar", "s"]
 DEFAULT_INITIAL_CONDITION = "alfven_mode"
 DIAGNOSTIC_GAMMA = 5.0 / 3.0
+
+# Scalar diagnostic names provided by this equation module. The standard
+# `total_energy*` names are what budget plotting tools expect. Additional
+# entries are S09-specific energy partitions useful for quick run inspection.
+SCALAR_DIAGNOSTIC_INFO = {
+    **STANDARD_ENERGY_SCALAR_DIAGNOSTIC_INFO,
+    "alfvenic_energy": "Alfvenic part of the S09 energy: 0.5 <|grad phi|^2 + |grad psi|^2>.",
+    "upar_energy": "Unweighted kinetic parallel energy proxy: 0.5 <upar^2>.",
+    "dbpar_energy": "Unweighted magnetic-compressive energy proxy: 0.5 <dbpar^2>.",
+    "entropy_variance": "Unweighted entropy variance proxy: 0.5 <s^2>.",
+    "total_energy_proxy": "Legacy unweighted sum of alfvenic_energy, upar_energy, dbpar_energy, and entropy_variance.",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -373,6 +387,19 @@ def total_energy(state: State, grid: Any, backend: Any, params: Any) -> float:
     return modal_average(density_hat, grid, backend)
 
 
+def alfvenic_energy(state: State, grid: Any, backend: Any) -> float:
+    """Return the S09 Alfvenic energy partition."""
+
+    xp = backend.xp
+    phi_hat = derive_phi_hat(state["omega"], grid)
+    density_hat = 0.5 * grid.kperp2 * (xp.abs(phi_hat) ** 2 + xp.abs(state["psi"]) ** 2)
+    return modal_average(density_hat, grid, backend)
+
+
+def _unweighted_field_energy(field_hat: Any, grid: Any, backend: Any) -> float:
+    return modal_average(0.5 * backend.xp.abs(field_hat) ** 2, grid, backend)
+
+
 def total_energy_dissipation_rhs(
     state: State,
     grid: Any,
@@ -437,3 +464,53 @@ def compute_conserved_quantity_budgets(
             "rhs_terms": rhs_terms,
         }
     }
+
+
+def compute_equation_scalar_diagnostics(
+    state: State,
+    *,
+    grid: Any,
+    fft: Any,
+    backend: Any,
+    params: Any,
+    workspace: Any | None = None,
+    linear_ops: dict[str, Any] | None = None,
+    budget_rhs_terms: dict[str, dict[str, float]] | None = None,
+    extra_rhs_terms: dict[str, dict[str, float]] | None = None,
+) -> dict[str, float]:
+    """Return S09-specific scalar diagnostics.
+
+    Equation modules own scientifically meaningful scalar diagnostics. For a
+    new equation set, provide this function and include the standard
+    `total_energy` / `total_energy_rhs_*` names so generic budget plotting
+    tools can operate without knowing equation-specific details.
+    """
+
+    alfvenic = alfvenic_energy(state, grid, backend)
+    upar = _unweighted_field_energy(state["upar"], grid, backend)
+    dbpar = _unweighted_field_energy(state["dbpar"], grid, backend)
+    entropy = _unweighted_field_energy(state["s"], grid, backend)
+    diagnostics = {
+        "alfvenic_energy": alfvenic,
+        "upar_energy": upar,
+        "dbpar_energy": dbpar,
+        "entropy_variance": entropy,
+        "total_energy_proxy": alfvenic + upar + dbpar + entropy,
+    }
+
+    budgets = compute_conserved_quantity_budgets(
+        state,
+        grid=grid,
+        backend=backend,
+        params=params,
+        linear_ops=linear_ops,
+        extra_rhs_terms=extra_rhs_terms,
+    )
+    rhs_terms = budgets["total_energy"].setdefault("rhs_terms", {})
+    if budget_rhs_terms is not None and "total_energy" in budget_rhs_terms:
+        rhs_terms.clear()
+        rhs_terms.update({name: float(value) for name, value in budget_rhs_terms["total_energy"].items()})
+    rhs_terms.setdefault("dissipation", 0.0)
+    rhs_terms.setdefault("forcing", 0.0)
+    diagnostics.update(flatten_conserved_quantity_budgets(budgets))
+    return diagnostics

@@ -7,7 +7,12 @@ from rmhdgpu.backend import build_backend
 from rmhdgpu.config import Config
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
-from rmhdgpu.initconds import build_initial_state, get_initial_condition_builder, list_initial_condition_types
+from rmhdgpu.initconds import (
+    build_initial_state,
+    get_initial_condition_builder,
+    list_initial_condition_types,
+    low_beta_stratified_mode_state,
+)
 from rmhdgpu.masks import build_dealias_mask
 from rmhdgpu.operators import lap_perp
 
@@ -22,7 +27,13 @@ def _build_context() -> tuple[Config, object, object, FFTManager, object]:
 
 
 def test_known_initial_conditions_are_registered() -> None:
-    assert {"zero", "alfven_mode", "aw_packet", "decaying_low_modes"} <= set(list_initial_condition_types())
+    assert {
+        "zero",
+        "alfven_mode",
+        "aw_packet",
+        "decaying_low_modes",
+        "low_beta_stratified_mode",
+    } <= set(list_initial_condition_types())
 
 
 def test_unknown_initial_condition_gives_helpful_error() -> None:
@@ -138,3 +149,22 @@ def test_decaying_low_modes_initial_condition_parameter_overrides() -> None:
         backend.to_numpy(default_state["psi"]),
         backend.to_numpy(override_state["psi"]),
     )
+
+
+def test_low_beta_eigenmode_helper_is_separate_from_registry() -> None:
+    config = Config(equation_set="low_beta_stratified", Nx=8, Ny=8, Nz=8, backend="numpy")
+    backend = build_backend(config)
+    grid = build_grid(config, backend)
+    state = low_beta_stratified_mode_state(
+        grid=grid,
+        backend=backend,
+        field_names=config.field_names,
+        k_indices=[0, 1, 0],
+        amplitude=0.2,
+        mode="unstable_growing",
+        params=config,
+    )
+
+    assert state.field_names == ["psi", "omega", "a"]
+    assert np.max(np.abs(backend.to_numpy(state["omega"]))) > 0.0
+    assert np.max(np.abs(backend.to_numpy(state["a"]))) > 0.0
