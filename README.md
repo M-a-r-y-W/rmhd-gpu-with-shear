@@ -376,7 +376,10 @@ That can override the Conda environment and leave you running `/opt/spack/.../py
 Any Python 3.10+ Conda environment is fine. The example below uses Python 3.10,
 which is the minimum supported version.
 
+It's best to setup the environment from a compute node on Aoraki.
+
 ```bash
+srun --partition=aoraki_gpu_H100 --gres=gpu:1 --cpus-per-task=8 --mem=32G --time=02:00:00 --pty bash
 mkdir -p ~/conda-envs
 conda create -y -p ~/conda-envs/curmpy python=3.10
 conda activate ~/conda-envs/curmpy
@@ -424,6 +427,10 @@ alias activate-curmpy="source ~/bin/activate-curmpy"
 
 ### Interactive workflow
 
+You may need to load a specific version of cuda instead of the default version on the cluster.
+e.g., instead of module load cuda, you may need module load cuda/12....
+Use module avail to check what cuda versions are available.
+
 ```bash
 srun --partition=aoraki_gpu_H100 --gres=gpu:1 --cpus-per-task=8 --mem=32G --time=02:00:00 --pty bash
 module purge
@@ -459,6 +466,7 @@ cd ~/cases/my_forced_case
 python -m rmhdgpu.run input.input --backend cupy
 ```
 
+Make sure you're loading the correct version of cuda, if the default does not work.
 Submit with:
 
 ```bash
