@@ -270,6 +270,34 @@ def _masked_r2c(real_field: Any, *, fft: Any, dealias_mask: Any | None) -> Any:
     return field_hat
 
 
+def _single_stored_mode_weight(grid: Any, iz: int) -> float:
+    if iz == 0:
+        return 1.0
+    if grid.Nz % 2 == 0 and iz == grid.Nz // 2:
+        return 1.0
+    return 2.0
+
+
+def _single_mode_real_rms_to_stored_amplitude(grid: Any, amplitude: float, iz: int) -> float:
+    normalization = float(np.prod(grid.real_shape))
+    return float(amplitude) * normalization / np.sqrt(_single_stored_mode_weight(grid, iz))
+
+
+def _resolve_single_fourier_mode_indices(grid: Any, k_indices: Sequence[int]) -> tuple[int, int, int]:
+    if len(k_indices) != 3:
+        raise ValueError(f"k_indices must have length 3; got {k_indices!r}.")
+
+    kx, ky, kz = (int(k_indices[0]), int(k_indices[1]), int(k_indices[2]))
+    if abs(kx) >= grid.Nx // 2:
+        raise ValueError(f"k_indices[0] must satisfy |kx| < Nx//2; got {kx} for Nx={grid.Nx}.")
+    if abs(ky) >= grid.Ny // 2:
+        raise ValueError(f"k_indices[1] must satisfy |ky| < Ny//2; got {ky} for Ny={grid.Ny}.")
+    if kz < 0 or kz >= grid.Nz // 2:
+        raise ValueError(f"k_indices[2] must satisfy 0 <= kz < Nz//2; got {kz} for Nz={grid.Nz}.")
+
+    return kx % grid.Nx, ky % grid.Ny, kz
+
+
 def _normalize_zero_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
     _reject_unknown_parameters("zero", parameters, set())
     return {}
@@ -336,6 +364,30 @@ def _normalize_low_beta_mode_parameters(parameters: dict[str, Any]) -> dict[str,
         raise ValueError(f"mode must be one of {sorted(allowed_modes)}; got {mode!r}.")
 
     return {"k_indices": k_indices, "amplitude": amplitude, "mode": mode}
+
+
+def _normalize_single_fourier_mode_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
+    allowed = {"k_indices", "amplitude", "seed"}
+    _reject_unknown_parameters("single_fourier_mode", parameters, allowed)
+
+    raw_k = parameters.get("k_indices", [1, 1, 1])
+    if not isinstance(raw_k, (list, tuple)) or len(raw_k) != 3:
+        raise ValueError("k_indices must be an array of three integers.")
+
+    k_indices: list[int] = []
+    for index, value in enumerate(raw_k):
+        if not isinstance(value, int):
+            raise ValueError(f"k_indices[{index}] must be an integer; got {value!r}.")
+        if index == 2 and value < 0:
+            raise ValueError(f"k_indices[{index}] must be nonnegative; got {value!r}.")
+        k_indices.append(int(value))
+
+    amplitude = float(parameters.get("amplitude", 0.1))
+    if amplitude <= 0.0:
+        raise ValueError(f"amplitude must be positive; got {amplitude!r}.")
+
+    seed = int(parameters.get("seed", 0))
+    return {"k_indices": k_indices, "amplitude": amplitude, "seed": seed}
 
 
 def _normalize_decaying_low_modes_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
@@ -435,6 +487,44 @@ def low_beta_stratified_mode(
         mode=normalized["mode"],
         params=params,
     )
+    if dealias_mask is not None:
+        state.apply_mask(dealias_mask)
+    return state
+
+
+@register_initial_condition(
+    "single_fourier_mode",
+    normalize_parameters=_normalize_single_fourier_mode_parameters,
+    description="Populate one Fourier mode in every evolved field with independent random coefficients.",
+)
+def single_fourier_mode(
+    *,
+    parameters: Mapping[str, Any] | None = None,
+    grid: Any,
+    backend: Any,
+    fft: Any,
+    dealias_mask: Any | None,
+    field_names: Sequence[str],
+    params: Any,
+) -> State:
+    """Build a generic single-mode random state for the active field list.
+
+    Each evolved field receives an independent complex Gaussian coefficient at
+    the same stored Fourier mode. The amplitude parameter sets the expected
+    real-space RMS of each initialized field.
+    """
+
+    del fft, params
+    normalized = _normalize_single_fourier_mode_parameters(_as_parameter_dict(parameters))
+    ix, iy, iz = _resolve_single_fourier_mode_indices(grid, normalized["k_indices"])
+    coeff_scale = _single_mode_real_rms_to_stored_amplitude(grid, normalized["amplitude"], iz)
+    rng = np.random.default_rng(normalized["seed"])
+
+    state = State(grid, backend, field_names=list(field_names))
+    for field_name in state.field_names:
+        coefficient = coeff_scale * (rng.normal() + 1j * rng.normal()) / np.sqrt(2.0)
+        state[field_name][ix, iy, iz] = coefficient
+
     if dealias_mask is not None:
         state.apply_mask(dealias_mask)
     return state

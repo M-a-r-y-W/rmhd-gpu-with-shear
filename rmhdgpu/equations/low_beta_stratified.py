@@ -12,6 +12,9 @@ The ideal equations implemented here are
 The linear growth-rate form is
 
 `lambda^2 = N2 * k_y^2 / k_perp^2 - vA^2 * k_z^2`.
+
+Positive `N2` gives unstable/decaying branches when the stratification term
+dominates, while negative `N2` gives oscillatory stable branches.
 """
 
 from __future__ import annotations
@@ -42,8 +45,8 @@ SCALAR_DIAGNOSTIC_INFO = {
     **STANDARD_ENERGY_SCALAR_DIAGNOSTIC_INFO,
     "total_energy_rhs_stratification": "Signed ideal stratification contribution to d_t total_energy.",
     "alfvenic_energy": "Alfvenic part of the low-beta energy: 0.5 <|grad phi|^2 + |grad psi|^2>.",
-    "a_energy": "Stratification-field energy partition: 0.5 <a^2 / N2>.",
-    "total_energy_proxy": "Sum of alfvenic_energy and a_energy for plotting convenience.",
+    "a_energy": "Signed stratification-field quadratic contribution: 0.5 <a^2 / N2>.",
+    "total_energy_proxy": "Signed sum of alfvenic_energy and a_energy for plotting convenience.",
 }
 
 
@@ -264,7 +267,7 @@ def perpendicular_energy_spectra(
 
 
 def total_energy_modal_density(state: State, grid: Any, backend: Any, params: Any) -> Any:
-    """Return the modal quadratic density for the low-beta total energy."""
+    """Return the signed modal quadratic density for the low-beta total energy."""
 
     xp = backend.xp
     p = derived_parameters(params)
@@ -276,7 +279,7 @@ def total_energy_modal_density(state: State, grid: Any, backend: Any, params: An
 
 
 def total_energy(state: State, grid: Any, backend: Any, params: Any) -> float:
-    """Return `0.5 <|grad phi|^2 + |grad psi|^2 + a^2 / N2>`."""
+    """Return the signed quadratic form `0.5 <|grad phi|^2 + |grad psi|^2 + a^2 / N2>`."""
 
     density_hat = total_energy_modal_density(state, grid, backend, params)
     return modal_average(density_hat, grid, backend)
@@ -292,7 +295,7 @@ def alfvenic_energy(state: State, grid: Any, backend: Any) -> float:
 
 
 def a_energy(state: State, grid: Any, backend: Any, params: Any) -> float:
-    """Return the stratification-field energy partition."""
+    """Return the signed stratification-field quadratic contribution."""
 
     p = derived_parameters(params)
     return modal_average(0.5 * (backend.xp.abs(state["a"]) ** 2) / p.N2, grid, backend)

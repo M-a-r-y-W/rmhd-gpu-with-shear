@@ -283,8 +283,10 @@ class Config:
         self.vA = float(self.vA)
         self.cs2_over_vA2 = float(self.cs2_over_vA2)
         self.N2 = float(self.N2)
-        if self.N2 <= 0.0:
-            raise ValueError(f"N2 must be positive; got {self.N2!r}.")
+        if not np.isfinite(self.N2):
+            raise ValueError(f"N2 must be finite; got {self.N2!r}.")
+        if self.N2 == 0.0:
+            raise ValueError(f"N2 must be nonzero; got {self.N2!r}.")
         if self.forcing_seed is not None:
             if not isinstance(self.forcing_seed, (int, np.integer)):
                 raise ValueError(

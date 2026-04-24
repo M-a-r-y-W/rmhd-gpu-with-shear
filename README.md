@@ -208,6 +208,10 @@ Supported sections are:
 - `[dissipation.<field>]` for manual per-field dissipation
 - `[initial_condition]`
 
+For the low-beta stratified system, `N2` may be positive or negative. With the
+sign convention used here, `N2 > 0` allows unstable/decaying linear branches,
+while `N2 < 0` gives oscillatory stable branches. `N2 = 0` is still rejected.
+
 Manual dissipation remains the default. In that mode, set per-field blocks such
 as `[dissipation.psi]` and `[dissipation.omega]` exactly as before. The valid
 field names come from `[equations].type`; for example `low_beta_stratified`
@@ -249,11 +253,12 @@ Currently supported initial conditions are:
 
 - `initial_condition.type` selects a registered builder in `rmhdgpu.initconds`
 - put initializer-specific options under `[initial_condition.parameters]` (flat keys under `[initial_condition]` still work for compatibility)
-- `type = "alfven_mode"` with `k_indices = [kx, ky, kz]`, `amplitude`, and `branch = "plus"` or `"minus"`
+- `type = "alfven_mode"` with `k_indices = [kx, ky, kz]`, `amplitude`, and `branch = "plus"` or `"minus"`; `amplitude` rescales the mode so `total_energy ~ amplitude^2`
 - `type = "zero"`
 - `type = "aw_packet"`
 - `type = "decaying_low_modes"`
-- `type = "low_beta_stratified_mode"` for the low-beta stratified linear eigensystem
+- `type = "single_fourier_mode"` with `k_indices = [kx, ky, kz]`, `amplitude`, and `seed`; it puts independent random coefficients into the same Fourier mode for every evolved field
+- `type = "low_beta_stratified_mode"` for the low-beta stratified linear eigensystem; for `N2 > 0`, `amplitude` rescales the mode so `total_energy ~ amplitude^2`
 
 Adding a new initial condition means adding and registering a builder in
 `rmhdgpu.initconds`. For equation-specific eigenmodes, keep the reusable

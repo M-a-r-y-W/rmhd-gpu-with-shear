@@ -20,6 +20,7 @@ from rmhdgpu.initconds.builtin import (
     low_beta_stratified_mode,
     normalize_initial_condition_parameters,
     register_initial_condition,
+    single_fourier_mode,
     zero,
 )
 from rmhdgpu.initconds.eigenmodes_s09 import (
@@ -47,6 +48,7 @@ __all__ = [
     "low_beta_stratified_mode_state",
     "normalize_initial_condition_parameters",
     "register_initial_condition",
+    "single_fourier_mode",
     "single_mode_field",
     "slow_mode_state",
     "zero",

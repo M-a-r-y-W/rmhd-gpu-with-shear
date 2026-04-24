@@ -43,6 +43,11 @@ def low_beta_stratified_mode_state(
     The eigenvector is selected numerically from the equation module's
     `linear_matrix(...)`. This keeps the initializer tied to the same linear
     representation used by tests and avoids hand-coded branch relations.
+
+    The amplitude parameter rescales the mode by a positive-definite quadratic
+    norm, `alfvenic_energy + |a_energy|`. For `N2 > 0` this coincides with the
+    equation module's signed `total_energy`, so the initialized energy is
+    `amplitude^2`.
     """
 
     if params is None:
@@ -72,8 +77,16 @@ def low_beta_stratified_mode_state(
     scale = np.max(np.abs(vector))
     if scale <= 0.0:
         raise ValueError("Selected low-beta eigenvector has zero amplitude.")
-    vector = amplitude * vector / scale
+    vector = vector / scale
 
     for component, field_name in enumerate(equation_module.FIELD_NAMES):
         state[field_name][ix, iy, iz] = vector[component]
+    amplitude_norm2 = equation_module.alfvenic_energy(state, grid, backend) + abs(
+        equation_module.a_energy(state, grid, backend, params)
+    )
+    if amplitude_norm2 <= 0.0:
+        raise ValueError("Selected low-beta eigenvector has zero positive-definite norm.")
+    scale_factor = float(np.abs(amplitude)) / np.sqrt(amplitude_norm2)
+    for field_name in state.field_names:
+        state[field_name][...] *= scale_factor
     return state

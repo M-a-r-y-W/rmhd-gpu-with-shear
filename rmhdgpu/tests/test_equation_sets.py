@@ -180,6 +180,14 @@ def test_equation_set_selection_low_beta_stratified() -> None:
     assert Config(equation_set="low_beta_stratified").field_names == ["psi", "omega", "a"]
 
 
+def test_low_beta_config_accepts_negative_N2_but_rejects_zero() -> None:
+    config = Config(equation_set="low_beta_stratified", N2=-0.25)
+    assert config.N2 == -0.25
+
+    with pytest.raises(ValueError, match="N2 must be nonzero"):
+        Config(equation_set="low_beta_stratified", N2=0.0)
+
+
 def test_unknown_equation_set_gives_helpful_error() -> None:
     with pytest.raises(ValueError, match="Unknown equation set 'not_real'"):
         get_equation_module("not_real")
@@ -242,6 +250,7 @@ n_par = 1
     [
         (1.0, 1.0, 2.0, 0.25, 1.3),
         (0.0, 1.0, 0.0, 0.25, 1.3),
+        (0.0, 1.0, 0.0, -0.25, 1.3),
     ],
 )
 def test_low_beta_linear_matrix_eigenvalues_match_dispersion_relation(
@@ -266,15 +275,26 @@ def test_low_beta_linear_matrix_eigenvalues_match_dispersion_relation(
     assert np.min(np.abs(eigenvalues)) < 1.0e-12
 
 
-def test_low_beta_single_mode_matches_linear_evolution_stable_case() -> None:
-    config = Config(equation_set="low_beta_stratified", Nx=8, Ny=8, Nz=8, backend="numpy", vA=1.3, N2=0.25)
+@pytest.mark.parametrize(
+    "k_indices,vA,N2,steps",
+    [
+        ((1, 1, 2), 1.3, 0.25, 20),
+        ((0, 1, 0), 1.0, -0.25, 50),
+    ],
+)
+def test_low_beta_single_mode_matches_linear_evolution_stable_case(
+    k_indices: tuple[int, int, int],
+    vA: float,
+    N2: float,
+    steps: int,
+) -> None:
+    config = Config(equation_set="low_beta_stratified", Nx=8, Ny=8, Nz=8, backend="numpy", vA=vA, N2=N2)
     state0, backend, grid, fft, workspace, mask, eigenvalue = _low_beta_mode_state(
         config,
-        k_indices=(1, 1, 2),
+        k_indices=k_indices,
         mode="stable_plus",
     )
     dt = 1.0e-3
-    steps = 20
     evolved = _advance_low_beta(
         state0,
         steps=steps,
