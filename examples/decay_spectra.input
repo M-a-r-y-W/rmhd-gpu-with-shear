@@ -1,8 +1,9 @@
 # `.input` files use TOML syntax.
 #
-# This reproduces the old `sanity_decay_spectra` setup as a normal case input.
-# The built-in `decaying_low_modes` initializer creates the same low-mode
-# random fields that the old script used for phi, psi, upar, dbpar, and s.
+# This reproduces the old `sanity_decay_spectra` workflow as a normal case
+# input, but with the general `random_spectrum` initializer. The spectrum is
+# restricted to low integer mode numbers and then normalized to a target total
+# energy.
 #
 # Use:
 #   python -m rmhdgpu.run examples/decay_spectra.input
@@ -36,7 +37,14 @@ backend = "scipy_cpu"
 fft_workers = 8
 
 [initial_condition]
-type = "decaying_low_modes"
+type = "random_spectrum"
+
+[initial_condition.parameters]
+n_min = 1.0
+n_max = 3.0
+alpha = 0.0
+init_energy = 0.75
+seed = 1
 
 # The original sanity script estimated the perpendicular hyperdiffusion
 # coefficient from a nominal dissipation scale

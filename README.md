@@ -81,10 +81,15 @@ mode = "nonlinear"
 
 Available equation sets are:
 
+- `alfvenic`: lightweight two-field Alfvénic system with fields `psi`, `omega`
 - `s09`: homogeneous five-field system with fields `psi`, `omega`, `upar`, `dbpar`, `s`
 - `low_beta_stratified`: three-field system with fields `psi`, `omega`, `a`
 
 The selected equation set determines the evolved field list, so manual dissipation and forcing-amplitude blocks must use the matching field names.
+
+Use `alfvenic` when you only want the Alfvénic turbulence dynamics and do not
+need the slow/entropy sector from `s09`; it reduces memory use and the amount
+of work per timestep.
 
 The optional `[equations] mode = "linear"` switch is useful for tests and
 teaching examples. It runs the same solver workflow and still calls
@@ -256,7 +261,7 @@ Currently supported initial conditions are:
 - `type = "alfven_mode"` with `k_indices = [kx, ky, kz]`, `amplitude`, and `branch = "plus"` or `"minus"`; `amplitude` rescales the mode so `total_energy ~ amplitude^2`
 - `type = "zero"`
 - `type = "aw_packet"`
-- `type = "decaying_low_modes"`
+- `type = "random_spectrum"` with `n_min`, `n_max`, `alpha`, `init_energy`, and `seed`; it fills every evolved field with an independent band-limited random spectrum, then rescales the full state so the equation-module `total_energy` matches `init_energy`
 - `type = "single_fourier_mode"` with `k_indices = [kx, ky, kz]`, `amplitude`, and `seed`; it puts independent random coefficients into the same Fourier mode for every evolved field
 - `type = "low_beta_stratified_mode"` for the low-beta stratified linear eigensystem; for `N2 > 0`, `amplitude` rescales the mode so `total_energy ~ amplitude^2`
 

@@ -1,7 +1,7 @@
 # `.input` files use TOML syntax.
 #
 # This is the auto-dissipation companion to `examples/decay_spectra.input`.
-# It uses the same low-mode decaying initial condition, but lets the solver
+# It uses the same low-mode random-spectrum initial condition, but lets the solver
 # choose one common perpendicular hyperdissipation coefficient for all evolved
 # fields from the fluctuation amplitude near the chosen dissipation scale.
 #
@@ -37,7 +37,14 @@ backend = "scipy_cpu"
 fft_workers = 8
 
 [initial_condition]
-type = "decaying_low_modes"
+type = "random_spectrum"
+
+[initial_condition.parameters]
+n_min = 1.0
+n_max = 3.0
+alpha = 0.0
+init_energy = 0.75
+seed = 1
 
 # Auto mode picks a single common perpendicular coefficient for all fields.
 # The controller measures the total shell energy near

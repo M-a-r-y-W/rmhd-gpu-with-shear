@@ -10,7 +10,7 @@ from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
 from rmhdgpu.initconds import build_initial_state
 from rmhdgpu.initconds.testing import single_mode_field
-from rmhdgpu.initconds.testing import decaying_low_modes_test_parameters
+from rmhdgpu.initconds.testing import random_spectrum_test_parameters
 from rmhdgpu.masks import build_dealias_mask
 from rmhdgpu.state import State
 from rmhdgpu.steppers import if_ssprk3_step, ssprk3_step
@@ -103,8 +103,8 @@ def test_zero_dissipation_reduces_to_ideal() -> None:
     backend, grid, fft, workspace, mask = _build_context(config)
     linear_ops = s09.build_dissipation_operators(grid, config)
     state = build_initial_state(
-        "decaying_low_modes",
-        parameters=decaying_low_modes_test_parameters(0.1),
+        "random_spectrum",
+        parameters=random_spectrum_test_parameters(0.1),
         grid=grid,
         backend=backend,
         fft=fft,

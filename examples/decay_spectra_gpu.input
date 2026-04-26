@@ -2,7 +2,7 @@
 #
 # This is the GPU-targeted companion to `examples/decay_spectra.input`.
 # It matches the old `sanity_decay_spectra --gpu-256` idea: same low-mode
-# initial data recipe, but at 256^3 with a CuPy backend and a shorter runtime.
+# random-spectrum recipe, but at 256^3 with a CuPy backend and a shorter runtime.
 #
 # Use:
 #   python -m rmhdgpu.run examples/decay_spectra_gpu.input
@@ -35,7 +35,14 @@ t_out_full = 0.0
 backend = "cupy"
 
 [initial_condition]
-type = "decaying_low_modes"
+type = "random_spectrum"
+
+[initial_condition.parameters]
+n_min = 1.0
+n_max = 3.0
+alpha = 0.0
+init_energy = 0.75
+seed = 1
 
 # As in the CPU example, the original sanity script chose
 #

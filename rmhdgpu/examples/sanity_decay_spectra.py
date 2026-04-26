@@ -13,7 +13,7 @@ or, for a quick single-GPU `256^3` check,
 
 `python -m rmhdgpu.examples.sanity_decay_spectra --gpu-256`
 
-The script performs a modest dissipative run from low-mode initial data and
+The script performs a modest dissipative run from low-mode random-spectrum data and
 saves perpendicular shell spectra at several times.
 """
 
@@ -217,7 +217,8 @@ def main() -> None:
     )
 
     state = build_initial_state(
-        "decaying_low_modes",
+        "random_spectrum",
+        parameters={"n_min": 1.0, "n_max": 3.0, "alpha": 0.0, "init_energy": 0.75, "seed": 1},
         grid=grid,
         backend=backend,
         fft=fft,

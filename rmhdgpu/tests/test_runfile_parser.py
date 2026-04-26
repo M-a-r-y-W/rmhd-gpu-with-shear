@@ -154,12 +154,12 @@ Ny = 8
 Nz = 8
 
 [initial_condition]
-type = "decaying_low_modes"
-phi_seed = 9
+        type = "random_spectrum"
+        seed = 9
 
 [initial_condition.parameters]
-psi_seed = 22
-psi_amplitude = 0.125
+n_max = 2.0
+init_energy = 0.125
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -167,11 +167,11 @@ psi_amplitude = 0.125
 
     settings = resolve_run_settings(runfile_path=input_file)
 
-    assert settings.initial_condition.type == "decaying_low_modes"
-    assert settings.initial_condition.parameters["phi_seed"] == 9
-    assert settings.initial_condition.parameters["psi_seed"] == 22
-    assert settings.initial_condition.parameters["psi_amplitude"] == 0.125
-    assert settings.initial_condition.parameters["s_seed"] == 5
+    assert settings.initial_condition.type == "random_spectrum"
+    assert settings.initial_condition.parameters["seed"] == 9
+    assert settings.initial_condition.parameters["n_max"] == 2.0
+    assert settings.initial_condition.parameters["init_energy"] == 0.125
+    assert settings.initial_condition.parameters["n_min"] == 1.0
 
 
 def test_unknown_initial_condition_in_runfile_gives_helpful_error(tmp_path) -> None:
@@ -195,7 +195,7 @@ type = "not_a_real_initcond"
 
     message = str(excinfo.value)
     assert "Unknown initial condition type 'not_a_real_initcond'" in message
-    for name in ("zero", "alfven_mode", "aw_packet", "decaying_low_modes"):
+    for name in ("zero", "alfven_mode", "aw_packet", "random_spectrum"):
         assert name in message
 
 

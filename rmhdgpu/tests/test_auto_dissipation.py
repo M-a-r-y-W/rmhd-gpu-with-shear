@@ -12,7 +12,7 @@ from rmhdgpu.equations import s09
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
 from rmhdgpu.initconds import build_initial_state
-from rmhdgpu.initconds.testing import decaying_low_modes_test_parameters
+from rmhdgpu.initconds.testing import random_spectrum_test_parameters
 from rmhdgpu.masks import build_dealias_mask
 from rmhdgpu.run import main
 from rmhdgpu.runfile import resolve_run_settings
@@ -36,8 +36,8 @@ def _build_test_state(
 ) -> tuple[object, object, State, object]:
     backend, grid, fft, _, mask = _build_context(config)
     state = build_initial_state(
-        "decaying_low_modes",
-        parameters=decaying_low_modes_test_parameters(rms),
+        "random_spectrum",
+        parameters=random_spectrum_test_parameters(rms),
         grid=grid,
         backend=backend,
         fft=fft,
@@ -77,7 +77,7 @@ backend = "numpy"
 progress_output_every = 100
 
 [initial_condition]
-type = "decaying_low_modes"
+type = "random_spectrum"
 
 [dissipation]
 mode = "auto"

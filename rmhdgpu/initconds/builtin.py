@@ -25,6 +25,8 @@ from typing import Any
 
 import numpy as np
 
+from rmhdgpu.equations import get_equation_module
+from rmhdgpu.forcing import shaped_random_real_field
 from rmhdgpu.initconds.eigenmodes_low_beta_stratified import low_beta_stratified_mode_state
 from rmhdgpu.initconds.eigenmodes_s09 import alfven_mode_state
 from rmhdgpu.masks import apply_mask
@@ -36,19 +38,12 @@ InitialConditionBuilder = Callable[..., State]
 ParameterNormalizer = Callable[[dict[str, Any]], dict[str, Any]]
 
 
-DECAY_LOW_MODE_DEFAULTS = {
-    "phi_seed": 1,
-    "phi_amplitude": 0.4,
-    "psi_seed": 2,
-    "psi_amplitude": 0.3,
-    "upar_seed": 3,
-    "upar_amplitude": 0.08,
-    "dbpar_seed": 4,
-    "dbpar_amplitude": 0.06,
-    "s_seed": 5,
-    "s_amplitude": 0.05,
-    "a_seed": 6,
-    "a_amplitude": 0.05,
+RANDOM_SPECTRUM_DEFAULTS = {
+    "n_min": 1.0,
+    "n_max": 3.0,
+    "alpha": 0.0,
+    "init_energy": 0.75,
+    "seed": 0,
 }
 
 
@@ -137,33 +132,6 @@ def build_initial_state(
         field_names=field_names,
         params=params,
     )
-
-
-def low_mode_real_field(
-    grid: Any,
-    backend: Any,
-    *,
-    seed: int,
-    amplitude: float,
-) -> Any:
-    """Return a smooth low-mode random real field."""
-
-    rng = np.random.default_rng(seed)
-    xp = backend.xp
-    x = grid.x.reshape(grid.Nx, 1, 1)
-    y = grid.y.reshape(1, grid.Ny, 1)
-    z = grid.z.reshape(1, 1, grid.Nz)
-    field = backend.zeros(grid.real_shape, dtype=grid.real_dtype)
-
-    for nx in range(1, 4):
-        for ny in range(1, 4):
-            for nz in range(1, 4):
-                a_cos = rng.normal(scale=amplitude / 6.0)
-                a_sin = rng.normal(scale=amplitude / 6.0)
-                phase = nx * x + ny * y + nz * z
-                field += a_cos * xp.cos(phase) + a_sin * xp.sin(phase)
-
-    return field.astype(grid.real_dtype, copy=False)
 
 
 def aw_packet_real_field(grid: Any, backend: Any) -> Any:
@@ -390,21 +358,63 @@ def _normalize_single_fourier_mode_parameters(parameters: dict[str, Any]) -> dic
     return {"k_indices": k_indices, "amplitude": amplitude, "seed": seed}
 
 
-def _normalize_decaying_low_modes_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
-    _reject_unknown_parameters("decaying_low_modes", parameters, set(DECAY_LOW_MODE_DEFAULTS))
+def _normalize_random_spectrum_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
+    _reject_unknown_parameters("random_spectrum", parameters, set(RANDOM_SPECTRUM_DEFAULTS))
 
-    normalized = dict(DECAY_LOW_MODE_DEFAULTS)
+    normalized = dict(RANDOM_SPECTRUM_DEFAULTS)
     normalized.update(parameters)
 
-    for key in list(normalized):
-        if key.endswith("_seed"):
-            normalized[key] = int(normalized[key])
-        if key.endswith("_amplitude"):
-            normalized[key] = float(normalized[key])
-            if normalized[key] <= 0.0:
-                raise ValueError(f"{key} must be positive; got {normalized[key]!r}.")
+    for key in ("n_min", "n_max", "alpha", "init_energy"):
+        normalized[key] = float(normalized[key])
+        if not np.isfinite(normalized[key]):
+            raise ValueError(f"{key} must be finite; got {normalized[key]!r}.")
+
+    normalized["seed"] = int(normalized["seed"])
+
+    if normalized["n_min"] < 0.0:
+        raise ValueError(f"n_min must be nonnegative; got {normalized['n_min']!r}.")
+    if normalized["n_max"] <= normalized["n_min"]:
+        raise ValueError(
+            f"n_max must be greater than n_min; got n_min={normalized['n_min']!r}, "
+            f"n_max={normalized['n_max']!r}."
+        )
+    if normalized["alpha"] < 0.0:
+        raise ValueError(f"alpha must be nonnegative; got {normalized['alpha']!r}.")
+    if normalized["init_energy"] == 0.0:
+        raise ValueError("init_energy must be nonzero so the spectrum can be normalized.")
 
     return normalized
+
+
+def _rescale_state_to_total_energy(
+    state: State,
+    *,
+    target_energy: float,
+    grid: Any,
+    backend: Any,
+    params: Any,
+) -> State:
+    """Rescale all evolved fields so the equation-module total energy matches `target_energy`."""
+
+    equation_module = get_equation_module(getattr(params, "equation_set"))
+    current_energy = float(equation_module.total_energy(state, grid, backend, params))
+    if not np.isfinite(current_energy):
+        raise ValueError("random_spectrum generated a non-finite total energy.")
+    if abs(current_energy) <= 1.0e-30:
+        raise ValueError(
+            "random_spectrum generated a state with near-zero total energy, so it cannot be "
+            "normalized to the requested init_energy."
+        )
+    if current_energy * target_energy < 0.0:
+        raise ValueError(
+            "random_spectrum generated a state whose total-energy sign does not match init_energy. "
+            "Choose a different seed or target energy."
+        )
+
+    scale = float(np.sqrt(target_energy / current_energy))
+    for field_name in state.field_names:
+        state[field_name][...] *= scale
+    return state
 
 
 @register_initial_condition(
@@ -558,11 +568,11 @@ def aw_packet(
 
 
 @register_initial_condition(
-    "decaying_low_modes",
-    normalize_parameters=_normalize_decaying_low_modes_parameters,
-    description="Low-mode random multifield initial condition used by the decaying examples.",
+    "random_spectrum",
+    normalize_parameters=_normalize_random_spectrum_parameters,
+    description="Band-limited random multifield spectrum normalized to a target total energy.",
 )
-def decaying_low_modes(
+def random_spectrum(
     *,
     parameters: Mapping[str, Any] | None = None,
     grid: Any,
@@ -572,53 +582,39 @@ def decaying_low_modes(
     field_names: Sequence[str],
     params: Any,
 ) -> State:
-    """Build the multifield low-mode random initial condition."""
+    """Build a random multifield spectrum for the active equation set.
 
-    normalized = _normalize_decaying_low_modes_parameters(_as_parameter_dict(parameters))
-    _require_fields("decaying_low_modes", field_names, ("psi", "omega"))
+    Each evolved field gets an independent random real field whose support is
+    limited to the shell band `n_min <= n <= n_max`, where `n` is the integer
+    mode-number magnitude. The Fourier amplitudes are shaped so the modal
+    energy is approximately proportional to `n^(-alpha)`. The complete state is
+    then rescaled so the equation-module `total_energy(...)` equals
+    `init_energy`.
+    """
 
     state = State(grid, backend, field_names=list(field_names))
-    phi_hat = _masked_r2c(
-        low_mode_real_field(
+    normalized = _normalize_random_spectrum_parameters(_as_parameter_dict(parameters))
+    rng = backend.random_generator(normalized["seed"])
+
+    for field_name in state.field_names:
+        _, field_hat = shaped_random_real_field(
             grid,
             backend,
-            seed=normalized["phi_seed"],
-            amplitude=normalized["phi_amplitude"],
-        ),
-        fft=fft,
-        dealias_mask=dealias_mask,
-    )
-    psi_hat = _masked_r2c(
-        low_mode_real_field(
-            grid,
-            backend,
-            seed=normalized["psi_seed"],
-            amplitude=normalized["psi_amplitude"],
-        ),
-        fft=fft,
-        dealias_mask=dealias_mask,
-    )
-
-    state["psi"][...] = psi_hat
-    state["omega"][...] = lap_perp(phi_hat, grid)
-
-    for field_name, seed_key, amplitude_key in (
-        ("upar", "upar_seed", "upar_amplitude"),
-        ("dbpar", "dbpar_seed", "dbpar_amplitude"),
-        ("s", "s_seed", "s_amplitude"),
-        ("a", "a_seed", "a_amplitude"),
-    ):
-        if field_name not in state.field_names:
-            continue
-        state[field_name][...] = _masked_r2c(
-            low_mode_real_field(
-                grid,
-                backend,
-                seed=normalized[seed_key],
-                amplitude=normalized[amplitude_key],
-            ),
-            fft=fft,
-            dealias_mask=dealias_mask,
+            fft,
+            n_min_force=normalized["n_min"],
+            n_max_force=normalized["n_max"],
+            alpha_force=0.5 * normalized["alpha"],
+            rng=rng,
         )
+        state[field_name][...] = field_hat
 
-    return state
+    if dealias_mask is not None:
+        state.apply_mask(dealias_mask)
+
+    return _rescale_state_to_total_energy(
+        state,
+        target_energy=normalized["init_energy"],
+        grid=grid,
+        backend=backend,
+        params=params,
+    )

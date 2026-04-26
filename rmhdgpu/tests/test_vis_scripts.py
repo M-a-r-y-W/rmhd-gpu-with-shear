@@ -29,6 +29,41 @@ def test_plot_scalars_smoke(tmp_path) -> None:
     assert output_path.exists()
 
 
+def test_plot_scalars_log_smoke_skips_nonpositive_columns(tmp_path) -> None:
+    csv_path = tmp_path / "scalar_diagnostics.csv"
+    with csv_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["time", "step", "positive_energy", "signed_budget"],
+        )
+        writer.writeheader()
+        writer.writerow({"time": 0.0, "step": 0, "positive_energy": 1.0, "signed_budget": 0.1})
+        writer.writerow({"time": 0.1, "step": 1, "positive_energy": 0.9, "signed_budget": -0.2})
+
+    output_path = tmp_path / "scalars_log.png"
+    result = plot_scalars_main(
+        [str(csv_path), "--output", str(output_path), "--columns", "positive_energy", "signed_budget", "--log"]
+    )
+
+    assert result == output_path.resolve()
+    assert output_path.exists()
+
+
+def test_plot_scalars_log_requires_positive_columns(tmp_path) -> None:
+    csv_path = tmp_path / "scalar_diagnostics.csv"
+    with csv_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["time", "step", "signed_budget"],
+        )
+        writer.writeheader()
+        writer.writerow({"time": 0.0, "step": 0, "signed_budget": 0.1})
+        writer.writerow({"time": 0.1, "step": 1, "signed_budget": -0.2})
+
+    with pytest.raises(SystemExit, match="No strictly positive scalar columns"):
+        plot_scalars_main([str(csv_path), "--columns", "signed_budget", "--log"])
+
+
 def test_plot_spectra_smoke(tmp_path) -> None:
     csv_path = tmp_path / "spectra.csv"
     with csv_path.open("w", encoding="utf-8", newline="") as handle:

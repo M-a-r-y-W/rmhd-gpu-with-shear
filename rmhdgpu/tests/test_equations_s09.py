@@ -9,7 +9,7 @@ from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
 from rmhdgpu.initconds import build_initial_state
 from rmhdgpu.initconds.eigenmodes_s09 import entropy_mode_state
-from rmhdgpu.initconds.testing import decaying_low_modes_test_parameters
+from rmhdgpu.initconds.testing import random_spectrum_test_parameters
 from rmhdgpu.masks import build_dealias_mask
 from rmhdgpu.state import State
 from rmhdgpu.workspace import Workspace
@@ -43,8 +43,8 @@ def test_rhs_zero_state() -> None:
 def test_rhs_shapes_and_field_names() -> None:
     config, backend, grid, fft, workspace, mask = _build_context()
     state = build_initial_state(
-        "decaying_low_modes",
-        parameters=decaying_low_modes_test_parameters(0.2),
+        "random_spectrum",
+        parameters=random_spectrum_test_parameters(0.2),
         grid=grid,
         backend=backend,
         fft=fft,

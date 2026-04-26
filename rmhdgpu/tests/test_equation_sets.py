@@ -8,7 +8,7 @@ import pytest
 
 from rmhdgpu.backend import build_backend
 from rmhdgpu.config import Config
-from rmhdgpu.equations import available_equation_sets, get_equation_module, low_beta_stratified, s09
+from rmhdgpu.equations import alfvenic, available_equation_sets, get_equation_module, low_beta_stratified, s09
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
 from rmhdgpu.initconds import build_initial_state
@@ -172,6 +172,12 @@ def test_equation_set_selection_s09() -> None:
     assert "s09" in available_equation_sets()
     assert get_equation_module("s09") is s09
     assert Config(equation_set="s09").field_names == s09.FIELD_NAMES
+
+
+def test_equation_set_selection_alfvenic() -> None:
+    assert "alfvenic" in available_equation_sets()
+    assert get_equation_module("alfvenic") is alfvenic
+    assert Config(equation_set="alfvenic").field_names == ["psi", "omega"]
 
 
 def test_equation_set_selection_low_beta_stratified() -> None:

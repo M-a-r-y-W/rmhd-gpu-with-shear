@@ -182,7 +182,7 @@ def test_total_energy_is_nearly_constant_for_ideal_multifield_case(tmp_path) -> 
         dissipative=False,
         use_forcing=False,
         zero_initial=False,
-        initial_condition_type="decaying_low_modes",
+        initial_condition_type="random_spectrum",
         dt=0.002,
         tmax=0.02,
         t_out_scal=0.002,

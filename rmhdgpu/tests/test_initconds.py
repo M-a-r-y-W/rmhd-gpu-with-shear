@@ -4,14 +4,15 @@ import numpy as np
 
 from rmhdgpu.backend import build_backend
 from rmhdgpu.config import Config
+from rmhdgpu.equations import s09
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
 from rmhdgpu.initconds import build_initial_state
-from rmhdgpu.initconds.testing import decaying_low_modes_test_parameters, single_mode_field
+from rmhdgpu.initconds.testing import random_spectrum_test_parameters, single_mode_field
 from rmhdgpu.masks import build_dealias_mask
 
 
-def test_decaying_low_modes_builder_returns_finite_nonzero_state() -> None:
+def test_random_spectrum_builder_returns_finite_nonzero_state() -> None:
     config = Config(Nx=12, Ny=12, Nz=12)
     backend = build_backend(config)
     grid = build_grid(config, backend)
@@ -19,8 +20,8 @@ def test_decaying_low_modes_builder_returns_finite_nonzero_state() -> None:
     mask = build_dealias_mask(grid, backend)
 
     state = build_initial_state(
-        "decaying_low_modes",
-        parameters=decaying_low_modes_test_parameters(0.5),
+        "random_spectrum",
+        parameters=random_spectrum_test_parameters(0.5),
         grid=grid,
         backend=backend,
         fft=fft,
@@ -36,6 +37,7 @@ def test_decaying_low_modes_builder_returns_finite_nonzero_state() -> None:
         assert np.isfinite(field_hat).all()
         assert np.isfinite(field_real).all()
         assert np.max(np.abs(field_real)) > 0.0
+    np.testing.assert_allclose(s09.total_energy(state, grid, backend, config), 0.5, atol=1.0e-12, rtol=1.0e-12)
 
 
 def test_single_mode_field_properties() -> None:

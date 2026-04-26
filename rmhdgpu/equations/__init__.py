@@ -10,10 +10,11 @@ from __future__ import annotations
 from importlib import import_module
 from types import ModuleType
 
-from . import low_beta_stratified, s09
+from . import alfvenic, low_beta_stratified, s09
 
 
 _EQUATION_MODULES: dict[str, str] = {
+    "alfvenic": "rmhdgpu.equations.alfvenic",
     "s09": "rmhdgpu.equations.s09",
     "low_beta_stratified": "rmhdgpu.equations.low_beta_stratified",
 }
@@ -49,6 +50,7 @@ build_dissipation_operators = s09.build_dissipation_operators
 
 __all__ = [
     "FIELD_NAMES",
+    "alfvenic",
     "available_equation_sets",
     "build_dissipation_operators",
     "derived_parameters",

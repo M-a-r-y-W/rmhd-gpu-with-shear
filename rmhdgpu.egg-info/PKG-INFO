@@ -228,7 +228,7 @@ Currently supported initial conditions are:
 - `type = "alfven_mode"` with `k_indices = [kx, ky, kz]`, `amplitude`, and `branch = "plus"` or `"minus"`
 - `type = "zero"`
 - `type = "aw_packet"`
-- `type = "decaying_low_modes"`
+- `type = "random_spectrum"` with `n_min`, `n_max`, `alpha`, `init_energy`, and `seed`
 
 Adding a new initial condition means adding and registering a builder in
 `rmhdgpu.initconds`.

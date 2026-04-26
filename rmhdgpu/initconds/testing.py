@@ -31,18 +31,13 @@ def single_mode_field(
     return field_hat
 
 
-def decaying_low_modes_test_parameters(rms: float = 0.1) -> dict[str, float | int]:
-    """Return deterministic low-mode parameters scaled for test-sized states."""
+def random_spectrum_test_parameters(init_energy: float = 0.1) -> dict[str, float | int]:
+    """Return deterministic random-spectrum parameters for test-sized states."""
 
     return {
-        "phi_seed": 1,
-        "phi_amplitude": 4.0 * rms,
-        "psi_seed": 2,
-        "psi_amplitude": 3.0 * rms,
-        "upar_seed": 3,
-        "upar_amplitude": 0.8 * rms,
-        "dbpar_seed": 4,
-        "dbpar_amplitude": 0.6 * rms,
-        "s_seed": 5,
-        "s_amplitude": 0.5 * rms,
+        "n_min": 1.0,
+        "n_max": 3.0,
+        "alpha": 0.0,
+        "init_energy": init_energy,
+        "seed": 1,
     }

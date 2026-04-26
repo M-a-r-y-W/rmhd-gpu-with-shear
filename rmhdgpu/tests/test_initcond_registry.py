@@ -32,7 +32,7 @@ def test_known_initial_conditions_are_registered() -> None:
         "zero",
         "alfven_mode",
         "aw_packet",
-        "decaying_low_modes",
+        "random_spectrum",
         "low_beta_stratified_mode",
         "single_fourier_mode",
     } <= set(list_initial_condition_types())
@@ -44,7 +44,7 @@ def test_unknown_initial_condition_gives_helpful_error() -> None:
 
     message = str(excinfo.value)
     assert "Unknown initial condition type 'does_not_exist'" in message
-    for name in ("zero", "alfven_mode", "aw_packet", "decaying_low_modes", "single_fourier_mode"):
+    for name in ("zero", "alfven_mode", "aw_packet", "random_spectrum", "single_fourier_mode"):
         assert name in message
 
 
@@ -176,10 +176,10 @@ def test_single_fourier_mode_rejects_modes_at_or_above_half_resolution() -> None
         )
 
 
-def test_decaying_low_modes_initial_condition() -> None:
+def test_random_spectrum_initial_condition() -> None:
     config, backend, grid, fft, mask = _build_context()
     state = build_initial_state(
-        "decaying_low_modes",
+        "random_spectrum",
         grid=grid,
         backend=backend,
         fft=fft,
@@ -192,12 +192,13 @@ def test_decaying_low_modes_initial_condition() -> None:
         field = backend.to_numpy(state[name])
         assert np.isfinite(field).all()
         assert np.max(np.abs(field)) > 0.0
+    np.testing.assert_allclose(s09.total_energy(state, grid, backend, config), 0.75, atol=1.0e-12, rtol=1.0e-12)
 
 
-def test_decaying_low_modes_initial_condition_parameter_overrides() -> None:
+def test_random_spectrum_initial_condition_parameter_overrides() -> None:
     config, backend, grid, fft, mask = _build_context()
     default_state = build_initial_state(
-        "decaying_low_modes",
+        "random_spectrum",
         grid=grid,
         backend=backend,
         fft=fft,
@@ -206,8 +207,8 @@ def test_decaying_low_modes_initial_condition_parameter_overrides() -> None:
         params=config,
     )
     override_state = build_initial_state(
-        "decaying_low_modes",
-        parameters={"psi_seed": 21, "psi_amplitude": 0.12},
+        "random_spectrum",
+        parameters={"seed": 21, "alpha": 1.5, "init_energy": 0.12},
         grid=grid,
         backend=backend,
         fft=fft,
@@ -217,10 +218,8 @@ def test_decaying_low_modes_initial_condition_parameter_overrides() -> None:
     )
 
     assert np.isfinite(backend.to_numpy(override_state["psi"])).all()
-    assert not np.allclose(
-        backend.to_numpy(default_state["psi"]),
-        backend.to_numpy(override_state["psi"]),
-    )
+    assert not np.allclose(backend.to_numpy(default_state["psi"]), backend.to_numpy(override_state["psi"]))
+    np.testing.assert_allclose(s09.total_energy(override_state, grid, backend, config), 0.12, atol=1.0e-12, rtol=1.0e-12)
 
 
 def test_low_beta_eigenmode_helper_is_separate_from_registry() -> None:

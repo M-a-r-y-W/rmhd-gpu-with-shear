@@ -61,6 +61,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", default=None, help="Output image path. Defaults next to the CSV file.")
     parser.add_argument("--title", default="Scalar diagnostics", help="Figure title.")
     parser.add_argument(
+        "--log",
+        action="store_true",
+        help="Use a log y scale. Only columns that stay strictly positive are plotted in this mode.",
+    )
+    parser.add_argument(
         "--show",
         action="store_true",
         help="Show the figure interactively after saving. Useful from Spyder or IPython.",
@@ -91,13 +96,21 @@ def main(argv: list[str] | None = None) -> Path:
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    plotted_columns = selected_columns
+    if args.log:
+        plotted_columns = [name for name in selected_columns if np.all(columns[name] > 0.0)]
+        if not plotted_columns:
+            raise SystemExit("No strictly positive scalar columns were selected for --log plotting.")
+
     fig, ax = plt.subplots(figsize=(8, 4.8), constrained_layout=True)
-    for name in selected_columns:
+    for name in plotted_columns:
         ax.plot(time, columns[name], lw=2, label=name)
 
     ax.set_xlabel("time")
     ax.set_ylabel("value")
     ax.set_title(args.title)
+    if args.log:
+        ax.set_yscale("log")
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=8)
 

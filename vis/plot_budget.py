@@ -11,7 +11,7 @@ For the current total-energy budget this means, for example,
 
 The bottom panel also shows the closure residual
 
-`measured d_t Q - Q_rhs_total`
+`measured d_t Q - sum(individual saved RHS terms)`
 
 which should remain near zero when the saved budget terms explain the measured
 evolution well.
@@ -59,6 +59,14 @@ def _backward_difference(time: np.ndarray, values: np.ndarray) -> np.ndarray:
     return derivative
 
 
+def _sum_rhs_terms(columns: dict[str, np.ndarray], rhs_term_names: list[str], *, time: np.ndarray) -> np.ndarray:
+    """Return the pointwise sum of the individual saved RHS-term columns."""
+
+    if not rhs_term_names:
+        return np.zeros_like(time, dtype=np.float64)
+    return np.sum([columns[name] for name in rhs_term_names], axis=0, dtype=np.float64)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("csv_path", help="Path to scalar_diagnostics.csv.")
@@ -98,7 +106,8 @@ def main(argv: list[str] | None = None) -> Path:
     )
 
     measured = _backward_difference(time, columns[args.quantity])
-    residual = measured - columns[rhs_total_name]
+    rhs_sum = _sum_rhs_terms(columns, rhs_term_names, time=time)
+    residual = measured - rhs_sum
     output_path = (
         csv_path.with_name(f"{args.quantity}_budget.png")
         if args.output is None
@@ -125,10 +134,10 @@ def main(argv: list[str] | None = None) -> Path:
     axes[1].plot(
         time,
         columns[rhs_total_name],
-        lw=3.0,
-        color="black",
+        lw=2.0,
+        color="0.45",
         ls="-",
-        label=rhs_total_name,
+        label=f"saved {rhs_total_name}",
     )
     term_linestyles = ["--", ":", "-."]
     for index, term_name in enumerate(rhs_term_names):
@@ -142,10 +151,10 @@ def main(argv: list[str] | None = None) -> Path:
     axes[1].plot(
         time,
         residual,
-        lw=1.8,
-        ls=":",
-        color="0.2",
-        label=rf"closure residual: measured d$_t$ {args.quantity} - {rhs_total_name}",
+        lw=3.0,
+        ls="-",
+        color="black",
+        label=rf"closure residual: measured d$_t$ {args.quantity} - sum(saved RHS terms)",
     )
     axes[1].axhline(0.0, color="0.4", lw=1.0, alpha=0.6)
     axes[1].set_xlabel("time")

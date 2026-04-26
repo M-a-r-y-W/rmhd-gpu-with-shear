@@ -13,7 +13,8 @@ from typing import Any
 
 import numpy as np
 
-from rmhdgpu.equations.s09 import FIELD_NAMES, derived_parameters, total_energy as s09_total_energy
+from rmhdgpu.equations import get_equation_module
+from rmhdgpu.equations.s09 import FIELD_NAMES, derived_parameters
 from rmhdgpu.operators import lap_perp
 from rmhdgpu.state import State
 
@@ -54,7 +55,7 @@ def alfven_mode_state(
     branch: str = "plus",
     params: Any | None = None,
 ) -> State:
-    """Return an exact linear S09 Alfvén eigenmode in Fourier space.
+    """Return an exact Alfvén eigenmode in Fourier space.
 
     Branch convention:
 
@@ -63,9 +64,10 @@ def alfven_mode_state(
     - `branch="minus"` uses `phi = -psi`, so the mode evolves as
       `exp(-i vA k_z t)`
 
-    The amplitude parameter rescales the mode so `sqrt(total_energy) = amplitude`.
-    For an exact Alfvén wave this is also the perpendicular RMS fluctuation
-    amplitude. This helper is mainly intended for controlled verification setups.
+    The amplitude parameter rescales the mode so `sqrt(total_energy) = amplitude`
+    using the active equation-set energy diagnostic. For an exact Alfvén wave
+    this is also the perpendicular RMS fluctuation amplitude. This helper is
+    mainly intended for controlled verification setups.
     """
 
     if params is None:
@@ -85,8 +87,11 @@ def alfven_mode_state(
     omega_hat = lap_perp(phi_hat, grid)
 
     state["psi"][...] = psi_hat
-    state["omega"][...] = omega_hat
-    energy = s09_total_energy(state, grid, backend, params)
+    if "omega" in state.field_names:
+        state["omega"][...] = omega_hat
+
+    equation_module = get_equation_module(getattr(params, "equation_set", "s09"))
+    energy = equation_module.total_energy(state, grid, backend, params)
     if energy <= 0.0:
         raise ValueError("Alfvén eigenmode normalization produced nonpositive energy.")
     scale_factor = float(np.abs(amplitude)) / np.sqrt(energy)

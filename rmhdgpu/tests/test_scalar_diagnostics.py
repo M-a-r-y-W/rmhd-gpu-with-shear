@@ -6,7 +6,7 @@ from pathlib import Path
 from rmhdgpu.backend import build_backend
 from rmhdgpu.config import Config
 from rmhdgpu.diagnostics.scalar import compute_scalar_diagnostics
-from rmhdgpu.equations import low_beta_stratified, s09
+from rmhdgpu.equations import alfvenic, low_beta_stratified, s09
 from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
 from rmhdgpu.run import main
@@ -60,6 +60,32 @@ def test_s09_equation_scalar_diagnostics_include_expected_energy_names() -> None
     ):
         assert name in diagnostics
         assert name in s09.SCALAR_DIAGNOSTIC_INFO
+
+
+def test_alfvenic_equation_scalar_diagnostics_include_expected_energy_names() -> None:
+    config = Config(equation_set="alfvenic", Nx=8, Ny=8, Nz=8)
+    state, backend, grid, fft, workspace = _build_context(config)
+    linear_ops = alfvenic.build_dissipation_operators(grid, config)
+
+    diagnostics = alfvenic.compute_equation_scalar_diagnostics(
+        state,
+        grid=grid,
+        fft=fft,
+        backend=backend,
+        params=config,
+        workspace=workspace,
+        linear_ops=linear_ops,
+    )
+
+    for name in (
+        "total_energy",
+        "total_energy_rhs_total",
+        "total_energy_rhs_dissipation",
+        "total_energy_rhs_forcing",
+        "alfvenic_energy",
+    ):
+        assert name in diagnostics
+        assert name in alfvenic.SCALAR_DIAGNOSTIC_INFO
 
 
 def test_low_beta_equation_scalar_diagnostics_include_expected_energy_names() -> None:
