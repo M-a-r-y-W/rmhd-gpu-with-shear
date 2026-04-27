@@ -23,7 +23,7 @@ from rmhdgpu.diagnostics.budget import flatten_conserved_quantity_budgets
 from rmhdgpu.diagnostics.scalar import STANDARD_ENERGY_SCALAR_DIAGNOSTIC_INFO
 from rmhdgpu.diagnostics.spectra import perpendicular_shell_spectrum
 from rmhdgpu.fourier_diagnostics import modal_average
-from rmhdgpu.operators import dz, inv_lap_perp, lap_perp, poisson_bracket
+from rmhdgpu.operators import inv_lap_perp, lap_perp, poisson_bracket
 from rmhdgpu.state import State
 
 
@@ -35,6 +35,8 @@ SCALAR_DIAGNOSTIC_INFO = {
     **STANDARD_ENERGY_SCALAR_DIAGNOSTIC_INFO,
     "alfvenic_energy": "Total two-field Alfvenic energy: 0.5 <|grad phi|^2 + |grad psi|^2>.",
 }
+
+_ORIGINAL_POISSON_BRACKET = poisson_bracket
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,44 +87,155 @@ def ideal_rhs(
 ) -> State:
     """Return the Fourier-space ideal RHS of the two-field Alfvénic system."""
 
+    if workspace is None:
+        raise ValueError("Alfvenic ideal_rhs requires a Workspace instance.")
+
     p = derived_parameters(params)
     psi_hat = state["psi"]
     omega_hat = state["omega"]
-    phi_hat = derive_phi_hat(omega_hat, grid)
-    lap_psi_hat = lap_perp(psi_hat, grid)
 
     rhs_state = state.zeros_like() if out is None else out
     rhs_state.fill_zero()
 
+    # Linear terms:
+    #   vA dz(phi) = -i vA kz inv_kperp2 omega
+    #   vA dz(lap_perp psi) = -i vA kz kperp2 psi
+    # These are written in place to avoid materializing phi_hat or lap_psi_hat.
     rhs_psi = rhs_state["psi"]
-    rhs_psi[...] = p.vA * dz(phi_hat, grid)
-    rhs_psi[...] -= poisson_bracket(
-        phi_hat,
-        psi_hat,
-        grid,
-        fft,
-        workspace,
-        mask=dealias_mask,
-    )
-
     rhs_omega = rhs_state["omega"]
-    rhs_omega[...] = p.vA * dz(lap_psi_hat, grid)
-    rhs_omega[...] -= poisson_bracket(
-        phi_hat,
-        omega_hat,
-        grid,
-        fft,
-        workspace,
-        mask=dealias_mask,
-    )
-    rhs_omega[...] += poisson_bracket(
-        psi_hat,
-        lap_psi_hat,
-        grid,
-        fft,
-        workspace,
-        mask=dealias_mask,
-    )
+
+    rhs_psi[...] = omega_hat
+    rhs_psi *= grid.inv_kperp2
+    rhs_psi *= grid.kz
+    rhs_psi *= -1j * p.vA
+
+    rhs_omega[...] = psi_hat
+    rhs_omega *= grid.kperp2
+    rhs_omega *= grid.kz
+    rhs_omega *= -1j * p.vA
+
+    if getattr(params, "equation_mode", "nonlinear") == "linear":
+        return rhs_state
+
+    if poisson_bracket is not _ORIGINAL_POISSON_BRACKET:
+        phi_hat = workspace.complex["c1"]
+        lap_psi_hat = workspace.complex["c2"]
+
+        phi_hat[...] = omega_hat
+        phi_hat *= grid.inv_kperp2
+        phi_hat *= -1.0
+
+        lap_psi_hat[...] = psi_hat
+        lap_psi_hat *= grid.kperp2
+        lap_psi_hat *= -1.0
+
+        rhs_psi[...] -= poisson_bracket(
+            phi_hat,
+            psi_hat,
+            grid,
+            fft,
+            workspace,
+            mask=dealias_mask,
+        )
+        rhs_omega[...] -= poisson_bracket(
+            phi_hat,
+            omega_hat,
+            grid,
+            fft,
+            workspace,
+            mask=dealias_mask,
+        )
+        rhs_omega[...] += poisson_bracket(
+            psi_hat,
+            lap_psi_hat,
+            grid,
+            fft,
+            workspace,
+            mask=dealias_mask,
+        )
+        return rhs_state
+
+    xp = workspace.backend.xp
+    c0 = workspace.complex["c0"]
+    r0 = workspace.real["r0"]  # phi_x
+    r1 = workspace.real["r1"]  # phi_y
+    r2 = workspace.real["r2"]  # psi_x
+    r3 = workspace.real["r3"]  # psi_y
+    r4 = workspace.real["r4"]  # nonlinear accumulator
+    r5 = workspace.real.get("r5")
+    if r5 is None:
+        raise ValueError("Workspace needs at least six real buffers for Alfvenic ideal_rhs.")
+
+    # Shared real derivatives. Reusing these cuts the nonlinear RHS from three
+    # separate Poisson brackets (15 FFTs) to eight inverse and two forward FFTs.
+    c0[...] = omega_hat
+    c0 *= grid.inv_kperp2
+    c0 *= grid.kx
+    c0 *= -1j
+    fft.c2r(c0, out=r0)
+
+    c0[...] = omega_hat
+    c0 *= grid.inv_kperp2
+    c0 *= grid.ky
+    c0 *= -1j
+    fft.c2r(c0, out=r1)
+
+    c0[...] = psi_hat
+    c0 *= grid.kx
+    c0 *= 1j
+    fft.c2r(c0, out=r2)
+
+    c0[...] = psi_hat
+    c0 *= grid.ky
+    c0 *= 1j
+    fft.c2r(c0, out=r3)
+
+    # psi_t nonlinear term: -{phi, psi}
+    xp.multiply(r0, r3, out=r4)
+    xp.multiply(r1, r2, out=r5)
+    r4 -= r5
+    fft.r2c(r4, out=c0)
+    if dealias_mask is not None:
+        c0 *= dealias_mask
+    rhs_psi -= c0
+
+    # omega_t nonlinear terms:
+    #   -{phi, omega} + {psi, lap_perp psi}
+    # accumulated in real space before one forward transform.
+    c0[...] = omega_hat
+    c0 *= grid.ky
+    c0 *= 1j
+    fft.c2r(c0, out=r5)
+    xp.multiply(r0, r5, out=r4)
+    r4 *= -1.0
+
+    c0[...] = omega_hat
+    c0 *= grid.kx
+    c0 *= 1j
+    fft.c2r(c0, out=r5)
+    xp.multiply(r1, r5, out=r5)
+    r4 += r5
+
+    c0[...] = psi_hat
+    c0 *= grid.kperp2
+    c0 *= grid.ky
+    c0 *= -1j
+    fft.c2r(c0, out=r5)
+    xp.multiply(r2, r5, out=r5)
+    r4 += r5
+
+    c0[...] = psi_hat
+    c0 *= grid.kperp2
+    c0 *= grid.kx
+    c0 *= -1j
+    fft.c2r(c0, out=r5)
+    xp.multiply(r3, r5, out=r5)
+    r4 -= r5
+
+    fft.r2c(r4, out=c0)
+    if dealias_mask is not None:
+        c0 *= dealias_mask
+    rhs_omega += c0
 
     return rhs_state
 

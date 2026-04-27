@@ -9,6 +9,7 @@ from rmhdgpu.fft import FFTManager
 from rmhdgpu.grid import build_grid
 from rmhdgpu.initconds import build_initial_state
 from rmhdgpu.masks import build_dealias_mask
+from rmhdgpu.operators import dz, inv_lap_perp, lap_perp, poisson_bracket
 from rmhdgpu.state import State
 from rmhdgpu.steppers import ssprk3_step
 from rmhdgpu.workspace import Workspace
@@ -63,6 +64,66 @@ def test_alfvenic_rhs_zero_state() -> None:
 
     for name in rhs_state.field_names:
         np.testing.assert_allclose(backend.to_numpy(rhs_state[name]), 0.0, atol=0.0, rtol=0.0)
+
+
+def test_alfvenic_rhs_matches_poisson_bracket_reference() -> None:
+    config, backend, grid, fft, workspace, mask = _build_context()
+    reference_workspace = Workspace(grid, backend)
+    state = State(grid, backend, field_names=alfvenic.FIELD_NAMES)
+
+    x = grid.x.reshape(grid.Nx, 1, 1)
+    y = grid.y.reshape(1, grid.Ny, 1)
+    z = grid.z.reshape(1, 1, grid.Nz)
+    phi_real = np.cos(x + z) + 0.4 * np.sin(2.0 * y + z) + 0.2 * np.cos(x + y)
+    psi_real = 0.7 * np.cos(x + y + z) + 0.3 * np.sin(2.0 * x + y + z)
+
+    phi_hat = fft.r2c(phi_real.astype(grid.real_dtype, copy=False)) * mask
+    state["psi"][...] = fft.r2c(psi_real.astype(grid.real_dtype, copy=False)) * mask
+    state["omega"][...] = lap_perp(phi_hat, grid)
+
+    optimized = alfvenic.ideal_rhs(state, grid, fft, workspace, config, dealias_mask=mask)
+
+    psi_hat = state["psi"]
+    omega_hat = state["omega"]
+    reference = state.zeros_like()
+    phi_hat = inv_lap_perp(omega_hat, grid)
+    lap_psi_hat = lap_perp(psi_hat, grid)
+
+    reference["psi"][...] = config.vA * dz(phi_hat, grid)
+    reference["psi"][...] -= poisson_bracket(
+        phi_hat,
+        psi_hat,
+        grid,
+        fft,
+        reference_workspace,
+        mask=mask,
+    )
+    reference["omega"][...] = config.vA * dz(lap_psi_hat, grid)
+    reference["omega"][...] -= poisson_bracket(
+        phi_hat,
+        omega_hat,
+        grid,
+        fft,
+        reference_workspace,
+        mask=mask,
+    )
+    reference["omega"][...] += poisson_bracket(
+        psi_hat,
+        lap_psi_hat,
+        grid,
+        fft,
+        reference_workspace,
+        mask=mask,
+    )
+
+    for name in optimized.field_names:
+        np.testing.assert_allclose(
+            backend.to_numpy(optimized[name]),
+            backend.to_numpy(reference[name]),
+            atol=2.0e-12,
+            rtol=2.0e-12,
+            err_msg=f"Optimized Alfvenic RHS mismatch in field {name}.",
+        )
 
 
 def test_alfvenic_linear_matrix_eigenvalues_match_dispersion() -> None:

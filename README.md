@@ -89,7 +89,9 @@ The selected equation set determines the evolved field list, so manual dissipati
 
 Use `alfvenic` when you only want the Alfvénic turbulence dynamics and do not
 need the slow/entropy sector from `s09`; it reduces memory use and the amount
-of work per timestep.
+of work per timestep. Its equation implementation is intentionally more direct
+and less readable than the other equation sets because this is the performance
+path for large two-field GPU runs.
 
 The optional `[equations] mode = "linear"` switch is useful for tests and
 teaching examples. It runs the same solver workflow and still calls
