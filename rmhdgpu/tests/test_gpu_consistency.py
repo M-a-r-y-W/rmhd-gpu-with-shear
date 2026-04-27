@@ -167,13 +167,13 @@ def test_single_mode_decay_numpy_vs_cupy() -> None:
 
 
 def test_short_unforced_nonlinear_run_numpy_vs_cupy() -> None:
-    _, backend_np, grid_np, fft_np, workspace_np, final_np = _run_short_evolution(
+    config_np, backend_np, grid_np, fft_np, workspace_np, final_np = _run_short_evolution(
         "numpy",
         _deterministic_nonlinear_state,
         nx=10,
         steps=6,
     )
-    _, backend_cp, grid_cp, fft_cp, workspace_cp, final_cp = _run_short_evolution(
+    config_cp, backend_cp, grid_cp, fft_cp, workspace_cp, final_cp = _run_short_evolution(
         "cupy",
         _deterministic_nonlinear_state,
         nx=10,

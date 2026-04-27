@@ -437,14 +437,17 @@ alias activate-curmpy="source ~/bin/activate-curmpy"
 
 ### Interactive workflow
 
-You may need to load a specific version of cuda instead of the default version on the cluster.
-e.g., instead of module load cuda, you may need module load cuda/12....
-Use module avail to check what cuda versions are available.
+Load an explicit CUDA 12.x module rather than the cluster default if the
+default is newer than the installed NVIDIA driver supports. On the current
+Aoraki H100 nodes checked for this repository, the default `cuda` module points
+to CUDA 13.1 while the driver reports CUDA 12.5 support, so use an available
+CUDA 12.x module such as `cuda/12.5.1-b6iqzzi`. Use `module avail cuda` and
+`nvidia-smi` to check the current names and driver support.
 
 ```bash
 srun --partition=aoraki_gpu_H100 --gres=gpu:1 --cpus-per-task=8 --mem=32G --time=02:00:00 --pty bash
 module purge
-module load cuda
+module load cuda/12.5.1-b6iqzzi
 activate-curmpy
 cd ~/cases/my_forced_case
 python -m pytest ~/path/to/rmhd-gpu/rmhdgpu/tests/test_cupy_backend.py ~/path/to/rmhd-gpu/rmhdgpu/tests/test_gpu_consistency.py
@@ -467,7 +470,7 @@ Minimal job script:
 #SBATCH --time=02:00:00
 
 module purge
-module load cuda
+module load cuda/12.5.1-b6iqzzi
 source ~/.bashrc
 export PYTHONNOUSERSITE=1
 conda activate ~/conda-envs/curmpy
@@ -488,10 +491,13 @@ sbatch run_rmhdgpu.slurm
 If something seems wrong:
 
 ```bash
+module list
+nvidia-smi
 which python
 python -V
 python -c "import sys; print(sys.executable)"
 python -c "import numpy, cupy; print(numpy.__version__, cupy.__version__)"
+python -c "import cupy; cupy.show_config()"
 ```
 
 If `which python` points to `/opt/spack/...`, the wrong Python is active.
