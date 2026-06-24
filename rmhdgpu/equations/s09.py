@@ -42,9 +42,9 @@ from rmhdgpu.state import State
 
 
 EQUATION_SET_NAME = "s09"
-FIELD_NAMES = ["psi", "omega", "upar", "dbpar", "s"]
+FIELD_NAMES = ["psi", "omega", "upar", "dbpar"] #, "s"
 DEFAULT_INITIAL_CONDITION = "alfven_mode"
-DIAGNOSTIC_GAMMA = 5.0 / 3.0
+#DIAGNOSTIC_GAMMA = 5.0 / 3.0
 
 # Scalar diagnostic names provided by this equation module. The standard
 # `total_energy*` names are what budget plotting tools expect. Additional
@@ -66,9 +66,9 @@ class S09Parameters:
     vA: float
     chi: float
     alpha: float
-    gamma: float
+    #gamma: float
     dbpar_energy_weight: float
-    entropy_energy_weight: float
+    #entropy_energy_weight: float
 
 
 def _param_float(params: Any, name: str) -> float:
@@ -88,14 +88,14 @@ def derived_parameters(params: Any) -> S09Parameters:
     vA = _param_float(params, "vA")
     chi = _param_float(params, "cs2_over_vA2")
     alpha = chi / (1.0 + chi)
-    gamma = DIAGNOSTIC_GAMMA
+    #gamma = DIAGNOSTIC_GAMMA
     return S09Parameters(
         vA=vA,
         chi=chi,
         alpha=alpha,
-        gamma=gamma,
+        #gamma=gamma,
         dbpar_energy_weight=1.0 / alpha,
-        entropy_energy_weight=chi / (gamma**2 * (gamma - 1.0)),
+        #entropy_energy_weight=chi / (gamma**2 * (gamma - 1.0)),
     )
 
 
@@ -127,7 +127,7 @@ def ideal_rhs(
     dealias_mask: Any | None = None,
     out: State | None = None,
 ) -> State:
-    """Return the Fourier-space ideal RHS of the homogeneous five-field system."""
+    """Return the Fourier-space ideal RHS of the homogeneous four(five)-field system."""
 
     p = derived_parameters(params)
 
@@ -135,7 +135,7 @@ def ideal_rhs(
     omega_hat = state["omega"]
     upar_hat = state["upar"]
     dbpar_hat = state["dbpar"]
-    s_hat = state["s"]
+#    s_hat = state["s"]
 
     phi_hat = derive_phi_hat(omega_hat, grid)
     lap_psi_hat = lap_perp(psi_hat, grid)
@@ -211,15 +211,15 @@ def ideal_rhs(
         mask=dealias_mask,
     )
 
-    rhs_s = rhs_state["s"]
-    rhs_s[...] -= poisson_bracket(
-        phi_hat,
-        s_hat,
-        grid,
-        fft,
-        workspace,
-        mask=dealias_mask,
-    )
+#    rhs_s = rhs_state["s"]
+#    rhs_s[...] -= poisson_bracket(
+    #     phi_hat,
+    #     s_hat,
+    #     grid,
+    #     fft,
+    #     workspace,
+    #     mask=dealias_mask,
+    # )
 
     return rhs_state
 
@@ -227,13 +227,13 @@ def ideal_rhs(
 def linear_matrix(kx: float, ky: float, kz: float, params: Any) -> np.ndarray:
     """Return the 5x5 linear matrix for one Fourier mode.
 
-    The field order is `[psi, omega, upar, dbpar, s]`. For `k_perp = 0`, the
+    The field order is `[psi, omega, upar, dbpar]`. For `k_perp = 0`, the
     `psi/omega` Alfvénic block is set to zero because the inverse perpendicular
     Laplacian is not meaningful there in the RMHD subspace.
     """
 
     p = derived_parameters(params)
-    matrix = np.zeros((5, 5), dtype=np.complex128)
+    matrix = np.zeros((4, 4), dtype=np.complex128)
     ikz = 1j * float(kz)
     kperp2 = float(kx) ** 2 + float(ky) ** 2
 
@@ -336,19 +336,19 @@ def perpendicular_energy_spectra(
         backend,
         bin_width=bin_width,
     )
-    _, entropy = perpendicular_shell_spectrum(
-        0.5 * p.entropy_energy_weight * (xp.abs(state["s"]) ** 2),
-        grid,
-        backend,
-        bin_width=bin_width,
-    )
+    # _, entropy = perpendicular_shell_spectrum(
+    #     0.5 * p.entropy_energy_weight * (xp.abs(state["s"]) ** 2),
+    #     grid,
+    #     backend,
+    #     bin_width=bin_width,
+    # )
     return {
         "kperp": kperp,
         "u_perp": u_perp,
         "b_perp": b_perp,
         "upar": upar,
         "dbpar": dbpar,
-        "s": entropy,
+    #    "s": entropy,
     }
 
 
@@ -376,9 +376,9 @@ def total_energy_modal_density(state: State, grid: Any, backend: Any, params: An
         0.5 * grid.kperp2 * (xp.abs(phi_hat) ** 2 + xp.abs(state["psi"]) ** 2)
         + 0.5 * xp.abs(state["upar"]) ** 2
         + 0.5 * p.dbpar_energy_weight * xp.abs(state["dbpar"]) ** 2
-        + 0.5 * p.entropy_energy_weight * xp.abs(state["s"]) ** 2
+    #    + 0.5 * p.entropy_energy_weight * xp.abs(state["s"]) ** 2
     )
-
+#STOPPED HERE THIS SECTION CONFUSING? UNSURE
 
 def total_energy(state: State, grid: Any, backend: Any, params: Any) -> float:
     """Return the volume-averaged total energy for this equation set."""
@@ -399,7 +399,7 @@ def alfvenic_energy(state: State, grid: Any, backend: Any) -> float:
 def _unweighted_field_energy(field_hat: Any, grid: Any, backend: Any) -> float:
     return modal_average(0.5 * backend.xp.abs(field_hat) ** 2, grid, backend)
 
-
+# From here more clear
 def total_energy_dissipation_rhs(
     state: State,
     grid: Any,
@@ -425,7 +425,7 @@ def total_energy_dissipation_rhs(
         - linear_ops["psi"] * grid.kperp2 * (xp.abs(state["psi"]) ** 2)
         - linear_ops["upar"] * xp.abs(state["upar"]) ** 2
         - p.dbpar_energy_weight * linear_ops["dbpar"] * xp.abs(state["dbpar"]) ** 2
-        - p.entropy_energy_weight * linear_ops["s"] * xp.abs(state["s"]) ** 2
+    #   - p.entropy_energy_weight * linear_ops["s"] * xp.abs(state["s"]) ** 2
     )
     return modal_average(density_hat, grid, backend)
 
@@ -489,13 +489,13 @@ def compute_equation_scalar_diagnostics(
     alfvenic = alfvenic_energy(state, grid, backend)
     upar = _unweighted_field_energy(state["upar"], grid, backend)
     dbpar = _unweighted_field_energy(state["dbpar"], grid, backend)
-    entropy = _unweighted_field_energy(state["s"], grid, backend)
+    #entropy = _unweighted_field_energy(state["s"], grid, backend)
     diagnostics = {
         "alfvenic_energy": alfvenic,
         "upar_energy": upar,
         "dbpar_energy": dbpar,
-        "entropy_variance": entropy,
-        "total_energy_proxy": alfvenic + upar + dbpar + entropy,
+    #    "entropy_variance": entropy,
+    #    "total_energy_proxy": alfvenic + upar + dbpar + entropy,
     }
 
     budgets = compute_conserved_quantity_budgets(
