@@ -143,19 +143,19 @@ def slow_mode_state(
     return state
 
 
-def entropy_mode_state(
-    grid: Any,
-    backend: Any,
-    field_names: Sequence[str] | None,
-    k_indices: Sequence[int],
-    amplitude: complex | float = 1.0,
-) -> State:
-    """Return a pure stationary S09 entropy mode in Fourier space.
+# def entropy_mode_state(
+#     grid: Any,
+#     backend: Any,
+#     field_names: Sequence[str] | None,
+#     k_indices: Sequence[int],
+#     amplitude: complex | float = 1.0,
+# ) -> State:
+#     """Return a pure stationary S09 entropy mode in Fourier space.
 
-    This helper is mainly intended for controlled verification setups.
-    """
+#     This helper is mainly intended for controlled verification setups.
+#     """
 
-    names = list(FIELD_NAMES if field_names is None else field_names)
-    state = State(grid, backend, field_names=names)
-    state["s"][...] = _stored_mode_array(grid, backend, k_indices, amplitude)
-    return state
+#     names = list(FIELD_NAMES if field_names is None else field_names)
+#     state = State(grid, backend, field_names=names)
+#     state["s"][...] = _stored_mode_array(grid, backend, k_indices, amplitude)
+#     return state

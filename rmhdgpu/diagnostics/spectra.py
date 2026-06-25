@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 
-PERPENDICULAR_SPECTRUM_KEYS = ("u_perp", "b_perp", "upar", "dbpar", "s")
+PERPENDICULAR_SPECTRUM_KEYS = ("u_perp", "b_perp", "upar", "dbpar") #, "s"
 _SPECTRUM_GRID_CACHE: dict[tuple[int, int, int, float, float, float], tuple[np.ndarray, np.ndarray]] = {}
 
 

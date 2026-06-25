@@ -1,4 +1,4 @@
-"""Homogeneous S09 five-field equation set.
+"""Homogeneous four-field equation set.
 
 This module is intended to be the main physics-facing file for this equation
 set. Generic solver bookkeeping should live elsewhere; the functions here
@@ -20,7 +20,6 @@ The evolved fields are `[psi, omega, upar, dbpar, s]`, with
 - `omega_t = vA * dz(lap_perp psi) - {phi, omega} + {psi, lap_perp psi}`
 - `dbpar_t = alpha * dz(upar) - {phi, dbpar} + alpha * {psi, upar}`
 - `upar_t = vA^2 * dz(dbpar) - {phi, upar} + vA^2 * {psi, dbpar}`
-- `s_t = -{phi, s}`
 
 with `chi = cs2_over_vA2 = cs^2 / vA^2` and `alpha = chi / (1 + chi)`.
 """
@@ -41,7 +40,7 @@ from rmhdgpu.diagnostics.spectra import perpendicular_shell_spectrum
 from rmhdgpu.state import State
 
 
-EQUATION_SET_NAME = "s09"
+EQUATION_SET_NAME = "shear"
 FIELD_NAMES = ["psi", "omega", "upar", "dbpar"] #, "s"
 DEFAULT_INITIAL_CONDITION = "alfven_mode"
 #DIAGNOSTIC_GAMMA = 5.0 / 3.0
@@ -54,8 +53,8 @@ SCALAR_DIAGNOSTIC_INFO = {
     "alfvenic_energy": "Alfvenic part of the S09 energy: 0.5 <|grad phi|^2 + |grad psi|^2>.",
     "upar_energy": "Unweighted kinetic parallel energy proxy: 0.5 <upar^2>.",
     "dbpar_energy": "Unweighted magnetic-compressive energy proxy: 0.5 <dbpar^2>.",
-    "entropy_variance": "Unweighted entropy variance proxy: 0.5 <s^2>.",
-    "total_energy_proxy": "Legacy unweighted sum of alfvenic_energy, upar_energy, dbpar_energy, and entropy_variance.",
+    #"entropy_variance": "Unweighted entropy variance proxy: 0.5 <s^2>.",
+    "total_energy_proxy": "Legacy unweighted sum of alfvenic_energy, upar_energy, dbpar_energy.",
 }
 
 
@@ -225,7 +224,7 @@ def ideal_rhs(
 
 
 def linear_matrix(kx: float, ky: float, kz: float, params: Any) -> np.ndarray:
-    """Return the 5x5 linear matrix for one Fourier mode.
+    """Return the 4x4 linear matrix for one Fourier mode.
 
     The field order is `[psi, omega, upar, dbpar]`. For `k_perp = 0`, the
     `psi/omega` Alfvénic block is set to zero because the inverse perpendicular
@@ -363,10 +362,7 @@ def total_energy_modal_density(state: State, grid: Any, backend: Any, params: An
     In code variables:
 
     `E = 0.5 * (|grad_perp phi|^2 + |grad_perp psi|^2 + |upar|^2`
-    `           + alpha^(-1) |dbpar|^2`
-    `           + [chi / (gamma^2 (gamma - 1))] |s|^2)`
-
-    with `gamma = 5/3`.
+    `           + alpha^(-1) |dbpar|^2`.
     """
 
     xp = backend.xp
@@ -495,7 +491,7 @@ def compute_equation_scalar_diagnostics(
         "upar_energy": upar,
         "dbpar_energy": dbpar,
     #    "entropy_variance": entropy,
-    #    "total_energy_proxy": alfvenic + upar + dbpar + entropy,
+        "total_energy_proxy": alfvenic + upar + dbpar, #+ entropy
     }
 
     budgets = compute_conserved_quantity_budgets(

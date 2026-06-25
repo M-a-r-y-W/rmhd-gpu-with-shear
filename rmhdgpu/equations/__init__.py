@@ -15,7 +15,7 @@ from . import alfvenic, low_beta_stratified, s09
 
 _EQUATION_MODULES: dict[str, str] = {
     "alfvenic": "rmhdgpu.equations.alfvenic",
-    "s09": "rmhdgpu.equations.s09",
+    "shear": "rmhdgpu.equations.s09",
     "low_beta_stratified": "rmhdgpu.equations.low_beta_stratified",
 }
 

@@ -24,7 +24,7 @@ from rmhdgpu.initconds.builtin import (
 )
 from rmhdgpu.initconds.eigenmodes_s09 import (
     alfven_mode_state,
-    entropy_mode_state,
+    #entropy_mode_state,
     slow_mode_state,
 )
 from rmhdgpu.initconds.eigenmodes_low_beta_stratified import low_beta_stratified_mode_state
@@ -37,7 +37,7 @@ __all__ = [
     "aw_packet",
     "aw_packet_real_field",
     "build_initial_state",
-    "entropy_mode_state",
+    #"entropy_mode_state",
     "get_initial_condition_builder",
     "initial_u_rms",
     "list_initial_condition_types",
