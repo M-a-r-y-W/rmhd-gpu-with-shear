@@ -13,7 +13,7 @@ Fourier conventions used throughout the solver:
 - `lap_perp(f_hat) = -k_perp^2 f_hat`
 - `inv_lap_perp(f_hat) = -inv_kperp2 f_hat`
 
-The evolved fields are `[psi, omega, upar, dbpar, s]`, with
+The evolved fields are `[psi, omega, upar, dbpar]`, with
 `phi = inv_lap_perp(omega)`. The homogeneous ideal equations are
 
 - `psi_t = vA * dz(phi) - {phi, psi}`
@@ -23,6 +23,7 @@ The evolved fields are `[psi, omega, upar, dbpar, s]`, with
 
 with `chi = cs2_over_vA2 = cs^2 / vA^2` and `alpha = chi / (1 + chi)`.
 """
+# EDIT THIS AFTERWARDS
 
 from __future__ import annotations
 
@@ -35,15 +36,14 @@ import numpy as np
 from rmhdgpu.diagnostics.budget import flatten_conserved_quantity_budgets
 from rmhdgpu.diagnostics.scalar import STANDARD_ENERGY_SCALAR_DIAGNOSTIC_INFO
 from rmhdgpu.fourier_diagnostics import modal_average
-from rmhdgpu.operators import dz, inv_lap_perp, lap_perp, poisson_bracket
+from rmhdgpu.operators import dy, dz, inv_lap_perp, lap_perp, poisson_bracket
 from rmhdgpu.diagnostics.spectra import perpendicular_shell_spectrum
 from rmhdgpu.state import State
 
 
 EQUATION_SET_NAME = "shear"
-FIELD_NAMES = ["psi", "omega", "upar", "dbpar"] #, "s"
+FIELD_NAMES = ["psi", "omega", "upar", "dbpar"] 
 DEFAULT_INITIAL_CONDITION = "alfven_mode"
-#DIAGNOSTIC_GAMMA = 5.0 / 3.0
 
 # Scalar diagnostic names provided by this equation module. The standard
 # `total_energy*` names are what budget plotting tools expect. Additional
@@ -53,7 +53,6 @@ SCALAR_DIAGNOSTIC_INFO = {
     "alfvenic_energy": "Alfvenic part of the S09 energy: 0.5 <|grad phi|^2 + |grad psi|^2>.",
     "upar_energy": "Unweighted kinetic parallel energy proxy: 0.5 <upar^2>.",
     "dbpar_energy": "Unweighted magnetic-compressive energy proxy: 0.5 <dbpar^2>.",
-    #"entropy_variance": "Unweighted entropy variance proxy: 0.5 <s^2>.",
     "total_energy_proxy": "Legacy unweighted sum of alfvenic_energy, upar_energy, dbpar_energy.",
 }
 
@@ -65,9 +64,8 @@ class S09Parameters:
     vA: float
     chi: float
     alpha: float
-    #gamma: float
+    Ku: float # Introduce changes here
     dbpar_energy_weight: float
-    #entropy_energy_weight: float
 
 
 def _param_float(params: Any, name: str) -> float:
@@ -80,21 +78,18 @@ def derived_parameters(params: Any) -> S09Parameters:
     """Return the compact set of scalars used by the S09 equations.
 
     This is the first place to edit if a new parameter enters the physics.
-    `gamma` is currently fixed to `5/3` for the diagnostic entropy
-    normalization.
     """
 
     vA = _param_float(params, "vA")
     chi = _param_float(params, "cs2_over_vA2")
+    Ku = _param_float(params, "Ku") #Introduce changes here
     alpha = chi / (1.0 + chi)
-    #gamma = DIAGNOSTIC_GAMMA
     return S09Parameters(
         vA=vA,
         chi=chi,
+        Ku=Ku, #Introduce changes here
         alpha=alpha,
-        #gamma=gamma,
         dbpar_energy_weight=1.0 / alpha,
-        #entropy_energy_weight=chi / (gamma**2 * (gamma - 1.0)),
     )
 
 
@@ -126,7 +121,7 @@ def ideal_rhs(
     dealias_mask: Any | None = None,
     out: State | None = None,
 ) -> State:
-    """Return the Fourier-space ideal RHS of the homogeneous four(five)-field system."""
+    """Return the Fourier-space ideal RHS of the homogeneous four-field system."""
 
     p = derived_parameters(params)
 
@@ -134,7 +129,6 @@ def ideal_rhs(
     omega_hat = state["omega"]
     upar_hat = state["upar"]
     dbpar_hat = state["dbpar"]
-#    s_hat = state["s"]
 
     phi_hat = derive_phi_hat(omega_hat, grid)
     lap_psi_hat = lap_perp(psi_hat, grid)
@@ -190,6 +184,7 @@ def ideal_rhs(
         workspace,
         mask=dealias_mask,
     )
+    rhs_dbpar[...] -= p.Ku * p.alpha * dy(psi_hat, grid)
 
     rhs_upar = rhs_state["upar"]
     rhs_upar[...] = (p.vA**2) * dz(dbpar_hat, grid)
@@ -209,16 +204,7 @@ def ideal_rhs(
         workspace,
         mask=dealias_mask,
     )
-
-#    rhs_s = rhs_state["s"]
-#    rhs_s[...] -= poisson_bracket(
-    #     phi_hat,
-    #     s_hat,
-    #     grid,
-    #     fft,
-    #     workspace,
-    #     mask=dealias_mask,
-    # )
+    rhs_upar[...] += p.Ku * dy(phi_hat, grid)
 
     return rhs_state
 
@@ -241,7 +227,9 @@ def linear_matrix(kx: float, ky: float, kz: float, params: Any) -> np.ndarray:
         matrix[1, 0] = -p.vA * ikz * kperp2
 
     matrix[2, 3] = (p.vA**2) * ikz
+    matrix[2,1] = -p.Ku * 1j * float(ky) / kperp2
     matrix[3, 2] = p.alpha * ikz
+    matrix[3, 0] = -p.Ku * p.alpha * 1j * float(ky)
     return matrix
 
 
@@ -335,19 +323,13 @@ def perpendicular_energy_spectra(
         backend,
         bin_width=bin_width,
     )
-    # _, entropy = perpendicular_shell_spectrum(
-    #     0.5 * p.entropy_energy_weight * (xp.abs(state["s"]) ** 2),
-    #     grid,
-    #     backend,
-    #     bin_width=bin_width,
-    # )
+
     return {
         "kperp": kperp,
         "u_perp": u_perp,
         "b_perp": b_perp,
         "upar": upar,
         "dbpar": dbpar,
-    #    "s": entropy,
     }
 
 
@@ -372,7 +354,6 @@ def total_energy_modal_density(state: State, grid: Any, backend: Any, params: An
         0.5 * grid.kperp2 * (xp.abs(phi_hat) ** 2 + xp.abs(state["psi"]) ** 2)
         + 0.5 * xp.abs(state["upar"]) ** 2
         + 0.5 * p.dbpar_energy_weight * xp.abs(state["dbpar"]) ** 2
-    #    + 0.5 * p.entropy_energy_weight * xp.abs(state["s"]) ** 2
     )
 #STOPPED HERE THIS SECTION CONFUSING? UNSURE
 
@@ -395,7 +376,6 @@ def alfvenic_energy(state: State, grid: Any, backend: Any) -> float:
 def _unweighted_field_energy(field_hat: Any, grid: Any, backend: Any) -> float:
     return modal_average(0.5 * backend.xp.abs(field_hat) ** 2, grid, backend)
 
-# From here more clear
 def total_energy_dissipation_rhs(
     state: State,
     grid: Any,
@@ -421,7 +401,6 @@ def total_energy_dissipation_rhs(
         - linear_ops["psi"] * grid.kperp2 * (xp.abs(state["psi"]) ** 2)
         - linear_ops["upar"] * xp.abs(state["upar"]) ** 2
         - p.dbpar_energy_weight * linear_ops["dbpar"] * xp.abs(state["dbpar"]) ** 2
-    #   - p.entropy_energy_weight * linear_ops["s"] * xp.abs(state["s"]) ** 2
     )
     return modal_average(density_hat, grid, backend)
 
@@ -436,7 +415,7 @@ def compute_conserved_quantity_budgets(
     extra_rhs_terms: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Return conserved-quantity values plus named signed RHS contributions."""
-
+#Not sure whether to make changes here, compare with stratification
     rhs_terms: dict[str, float] = {}
     if linear_ops is not None:
         rhs_terms["dissipation"] = total_energy_dissipation_rhs(
@@ -485,13 +464,11 @@ def compute_equation_scalar_diagnostics(
     alfvenic = alfvenic_energy(state, grid, backend)
     upar = _unweighted_field_energy(state["upar"], grid, backend)
     dbpar = _unweighted_field_energy(state["dbpar"], grid, backend)
-    #entropy = _unweighted_field_energy(state["s"], grid, backend)
     diagnostics = {
         "alfvenic_energy": alfvenic,
         "upar_energy": upar,
         "dbpar_energy": dbpar,
-    #    "entropy_variance": entropy,
-        "total_energy_proxy": alfvenic + upar + dbpar, #+ entropy
+        "total_energy_proxy": alfvenic + upar + dbpar,
     }
 
     budgets = compute_conserved_quantity_budgets(

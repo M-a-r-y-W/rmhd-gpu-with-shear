@@ -142,6 +142,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--vA", type=float, default=argparse.SUPPRESS)
     parser.add_argument("--cs2-over-vA2", dest="cs2_over_vA2", type=float, default=argparse.SUPPRESS)
     parser.add_argument("--N2", type=float, default=argparse.SUPPRESS)
+    parser.add_argument("--Ku", type=float, default=argparse.SUPPRESS)
 
     parser.add_argument("--use-forcing", action=argparse.BooleanOptionalAction, default=argparse.SUPPRESS)
     parser.add_argument("--force-sigma", type=float, default=argparse.SUPPRESS)

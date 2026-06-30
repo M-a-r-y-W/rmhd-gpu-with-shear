@@ -55,7 +55,7 @@ _SECTION_KEYS = {
     "output": {"t_out_scal", "t_out_spec", "t_out_full"},
     "backend": {"backend", "fft_workers", "real_dtype", "complex_dtype"},
     "runtime": {"runtime_check_every", "progress_output_every", "fail_on_nonfinite", "dealias", "dealias_mode"},
-    "physics": {"vA", "cs2_over_vA2", "N2"},
+    "physics": {"vA", "cs2_over_vA2", "N2", "Ku"},
     "forcing": {"use_forcing", "n_min_force", "n_max_force", "alpha_force", "forcing_seed", "force_amplitudes"},
 }
 _AUTO_DISSIPATION_KEYS = {
@@ -78,7 +78,7 @@ _SECTION_TO_CONFIG_KEYS = {
     "output": {"t_out_scal", "t_out_spec", "t_out_full"},
     "backend": {"backend", "fft_workers", "real_dtype", "complex_dtype"},
     "runtime": {"runtime_check_every", "progress_output_every", "fail_on_nonfinite", "dealias", "dealias_mode"},
-    "physics": {"vA", "cs2_over_vA2", "N2"},
+    "physics": {"vA", "cs2_over_vA2", "N2", "Ku"},
     "forcing": {"use_forcing", "n_min_force", "n_max_force", "alpha_force", "forcing_seed"},
 }
 
@@ -297,7 +297,7 @@ def cli_overrides_from_args(args: argparse.Namespace) -> dict[str, Any]:
     if "equation_mode" in values:
         overrides.setdefault("equations", {})["mode"] = values["equation_mode"]
 
-    physics_map = {"vA": "vA", "cs2_over_vA2": "cs2_over_vA2", "N2": "N2"}
+    physics_map = {"vA": "vA", "cs2_over_vA2": "cs2_over_vA2", "N2": "N2", "Ku": "Ku"}
     for cli_key, config_key in physics_map.items():
         if cli_key in values:
             _set_section("physics", config_key, values[cli_key])
@@ -430,6 +430,7 @@ def _resolved_document(
             "vA": config.vA,
             "cs2_over_vA2": config.cs2_over_vA2,
             "N2": config.N2,
+            "Ku": config.Ku,
             "use_forcing": config.use_forcing,
             "n_min_force": config.n_min_force,
             "n_max_force": config.n_max_force,
@@ -485,6 +486,7 @@ def _resolved_document(
             "vA": config_values["vA"],
             "cs2_over_vA2": config_values["cs2_over_vA2"],
             "N2": config_values["N2"],
+            "Ku": config_values["Ku"],
         },
         "forcing": {
             "use_forcing": config_values["use_forcing"],
