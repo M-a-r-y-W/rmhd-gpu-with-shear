@@ -35,7 +35,7 @@ import numpy as np
 
 from rmhdgpu.diagnostics.budget import flatten_conserved_quantity_budgets
 from rmhdgpu.diagnostics.scalar import STANDARD_ENERGY_SCALAR_DIAGNOSTIC_INFO
-from rmhdgpu.fourier_diagnostics import modal_average
+from rmhdgpu.fourier_diagnostics import modal_average, modal_inner_product_average
 from rmhdgpu.operators import dy, dz, inv_lap_perp, lap_perp, poisson_bracket
 from rmhdgpu.diagnostics.spectra import perpendicular_shell_spectrum
 from rmhdgpu.state import State
@@ -54,6 +54,7 @@ SCALAR_DIAGNOSTIC_INFO = {
     "upar_energy": "Unweighted kinetic parallel energy proxy: 0.5 <upar^2>.",
     "dbpar_energy": "Unweighted magnetic-compressive energy proxy: 0.5 <dbpar^2>.",
     "total_energy_proxy": "Legacy unweighted sum of alfvenic_energy, upar_energy, dbpar_energy.",
+    "total_energy_rhs_shear": "Signed shear contribution to d_t total_energy.",
 }
 
 
@@ -225,9 +226,9 @@ def linear_matrix(kx: float, ky: float, kz: float, params: Any) -> np.ndarray:
     if kperp2 > 0.0:
         matrix[0, 1] = -p.vA * ikz / kperp2
         matrix[1, 0] = -p.vA * ikz * kperp2
-
+        matrix[2,1] = -p.Ku * 1j * float(ky) / kperp2
+     
     matrix[2, 3] = (p.vA**2) * ikz
-    matrix[2,1] = -p.Ku * 1j * float(ky) / kperp2
     matrix[3, 2] = p.alpha * ikz
     matrix[3, 0] = -p.Ku * p.alpha * 1j * float(ky)
     return matrix
@@ -376,6 +377,15 @@ def alfvenic_energy(state: State, grid: Any, backend: Any) -> float:
 def _unweighted_field_energy(field_hat: Any, grid: Any, backend: Any) -> float:
     return modal_average(0.5 * backend.xp.abs(field_hat) ** 2, grid, backend)
 
+def total_energy_shear_rhs(state: State, grid: Any, backend: Any, params: Any) -> float:
+    """Return the signed ideal shear contribution `<>`."""
+
+    p = derived_parameters(params)
+    phi_hat = derive_phi_hat(state["omega"], grid)
+    v_hat = dy(phi_hat, grid) * p.Ku
+    u_hat = -dy(state["psi"], grid) * p.Ku * (p.vA**2)
+    return modal_inner_product_average(v_hat, state["upar"], grid, backend) + modal_inner_product_average(u_hat, state["dbpar"], grid, backend)
+
 def total_energy_dissipation_rhs(
     state: State,
     grid: Any,
@@ -414,9 +424,14 @@ def compute_conserved_quantity_budgets(
     linear_ops: dict[str, Any] | None = None,
     extra_rhs_terms: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """Return conserved-quantity values plus named signed RHS contributions."""
+    """Return conserved-quantity values plus named signed RHS contributions. The total energy is not conserved ideally; the explicit source is
+    stored as `shear` with sign convention
+
+    `d_t E = shear + dissipation + forcing + ...`."""
 #Not sure whether to make changes here, compare with stratification
-    rhs_terms: dict[str, float] = {}
+    rhs_terms: dict[str, float] = {
+        "shear": total_energy_shear_rhs(state, grid, backend, params),
+    }
     if linear_ops is not None:
         rhs_terms["dissipation"] = total_energy_dissipation_rhs(
             state,
