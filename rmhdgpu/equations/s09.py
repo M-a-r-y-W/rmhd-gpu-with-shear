@@ -378,7 +378,7 @@ def _unweighted_field_energy(field_hat: Any, grid: Any, backend: Any) -> float:
     return modal_average(0.5 * backend.xp.abs(field_hat) ** 2, grid, backend)
 
 def total_energy_shear_rhs(state: State, grid: Any, backend: Any, params: Any) -> float:
-    """Return the signed ideal shear contribution `<>`."""
+    """Return the signed ideal shear contribution `(put in the equation here later)`."""
 
     p = derived_parameters(params)
     phi_hat = derive_phi_hat(state["omega"], grid)
