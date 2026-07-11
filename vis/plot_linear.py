@@ -138,9 +138,11 @@ def main(argv: list[str] | None = None) -> list[Path]:
     omega = k_z * vA
     omega_slow =k_z * vslow
     Ku_scaled= 0.5 *Ku *(1.0- vslow/vA)
+    kperp= np.sqrt(k_x ** 2 + k_y ** 2)
+    zperp= 1j* 2.0 *amp *k_y *np.sqrt(2.0)/kperp
     if np.isclose(omega_slow,omega):
-        theoretical_amp_r= -amp* Ku_scaled
-    else: theoretical_amp= 1j * amp* Ku_scaled/(omega_slow-omega)
+        theoretical_amp_r= -zperp* Ku_scaled
+    else: theoretical_amp= 1j* zperp* Ku_scaled/(omega_slow-omega)
     
 
     for snapshot_path in snapshot_files:
