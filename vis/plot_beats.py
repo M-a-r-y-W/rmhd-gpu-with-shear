@@ -40,8 +40,8 @@ def _resolve_input_files(path: Path) -> list[Path]:
         raise SystemExit(f"Expected a snapshot .h5 file or a directory of snapshots; got {path}.")
     return [path]
 
-def _extract_z_line(field: np.ndarray, *, x_index: int, y_index: int) -> np.ndarray:
-    return field[x_index, y_index, :]
+def _extract_point(field: np.ndarray, *, x_index: int, y_index: int, z_index:int) -> np.ndarray:
+    return field[x_index, y_index, z_index]
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -53,7 +53,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--field2", default="dbpar", help="Field to plot.")
     parser.add_argument("--x-index", type=int, default=None, help="Explicit x index.")
     parser.add_argument("--y-index", type=int, default=None, help="Explicit y index.")
-    
+    parser.add_argument("--z-index", type=int, default=None, help="Explicit z index.")
+
     parser.add_argument(
         "--indices",
         nargs="*",
@@ -144,8 +145,9 @@ def main(argv: list[str] | None = None) -> list[Path]:
         theoretical_amp_r= -zperp* Ku_scaled
     else: theoretical_amp= 1j* zperp* Ku_scaled/(omega_slow-omega)
     
-    max_values= []
-    
+    time=[]
+    num_sol=[]
+    theo_sol=[]
     for snapshot_path in snapshot_files:
         with h5py.File(snapshot_path, "r") as handle:
             metadata = handle["metadata"]
@@ -173,105 +175,60 @@ def main(argv: list[str] | None = None) -> list[Path]:
             else: 
                 y_index = args.y_index
 
-            if not (0 <= x_index < len(x)):
-                raise SystemExit(f"x_index {x_index} is out of bounds for x array of length {len(x)}.")
-            if not (0 <= y_index < len(y)):
-                raise SystemExit(f"y_index {y_index} is out of bounds for y array of length {len(y)}.")
-
-            field1_line=_extract_z_line(field1,x_index=x_index, y_index=y_index)
-            field2_line=_extract_z_line(field2,x_index=x_index, y_index=y_index)
-        
-            
-            numerical_sol= field1_line - field2_line* vA *1/np.sqrt(alpha)
-            
-            snapshot_max= np.max(np.abs(numerical_sol))
-        
-            
-            max_values.append(snapshot_max)
-            
-            
-            
-    max_values=np.asarray(max_values)
-    
-    max_index=np.argmax(max_values)
-    
-    max_z=max_values[max_index]
-        
-    max_z=round(0.2+ round(max_z,1))
-
-    for snapshot_path in snapshot_files:
-        with h5py.File(snapshot_path, "r") as handle:
-            metadata = handle["metadata"]
-            output_group = handle["output"]
-
-            x = np.asarray(metadata["x"])
-            y = np.asarray(metadata["y"])
-            z = np.asarray(metadata["z"])
-
-            if args.field1 not in output_group or args.field2 not in output_group:
-                raise SystemExit(f"One or both fields {args.field1!r} and {args.field2!r} are not present in {snapshot_path}.")
-            
-            time_value = float(np.asarray(output_group["time"]))
-            step_value = int(np.asarray(output_group["step"]))
-            field1 = np.asarray(output_group[args.field1])
-            field2 = np.asarray(output_group[args.field2])
-
-            if args.x_index is None:
-                x_index = len(x) // 2
-            else: 
-                x_index = args.x_index
-
-            if args.y_index is None:
-                y_index = len(y) // 2
-            else: 
-                y_index = args.y_index
+            if args.z_index is None:
+                z_index = len(z) // 2
+            else:
+                z_index = args.z_index
 
             if not (0 <= x_index < len(x)):
                 raise SystemExit(f"x_index {x_index} is out of bounds for x array of length {len(x)}.")
             if not (0 <= y_index < len(y)):
                 raise SystemExit(f"y_index {y_index} is out of bounds for y array of length {len(y)}.")
+            if not (0 <= z_index < len(z)):
+                raise SystemExit(f"z_index {z_index} is out of bounds for z array of length {len(z)}.")
 
-            field1_line=_extract_z_line(field1,x_index=x_index, y_index=y_index)
-            field2_line=_extract_z_line(field2,x_index=x_index, y_index=y_index)
+            field1_point=_extract_point(field1,x_index=x_index, y_index=y_index, z_index=z_index)
+            field2_point=_extract_point(field2,x_index=x_index, y_index=y_index, z_index=z_index)
         
             
-            numerical_sol= field1_line - field2_line* vA *1/np.sqrt(alpha)
+            numerical_sol= field1_point - field2_point* vA *1/np.sqrt(alpha)
 
             x_0= x[x_index]
             y_0=y[y_index]
+            z_0= z[z_index]
             t= time_value
 
-            phase_shift= k_x *x_0 + k_y *y_0
-            phase_slow= phase_shift+ k_z* z -omega_slow*t
-            phase_alfven= phase_shift+ k_z* z -omega*t
+            phase_shift= k_x *x_0 + k_y *y_0 + k_z *z_0
+            phase_slow= phase_shift-omega_slow*t
+            phase_alfven= phase_shift-omega*t
 
             if np.isclose(omega_slow, omega):
                theoretical_sol=np.real(theoretical_amp_r*time_value*np.exp(1j*phase_alfven))
             else: theoretical_sol= np.real(theoretical_amp * (np.exp(1j*phase_alfven)-np.exp(1j*phase_slow)))
            
-            fig,ax= plt.subplots()
+            time.append(t)
+            num_sol.append(numerical_sol)
+            theo_sol.append(theoretical_sol)
 
-            ax.plot(z, numerical_sol, label="Numerical Solution", color="black")
-            ax.plot(z, theoretical_sol, label="Theoretical Solution", color="purple")
-            ax.set_xlabel("z")
-            ax.set_ylabel("Amplitude")
-            ax.set_ylim(-max_z, max_z)
-            ax.set_title(f"Comparison of numerical and theoretical linearised slow waves, t={time_value:.3f}")
-            ax.legend()
-            ax.grid(True, which="both", ls="--", lw=0.4)
+    fig,ax= plt.subplots()
 
-           
-           
-            output_dir = (
+    ax.plot(time, num_sol, label="Numerical Solution", color="black")
+    ax.plot(time, theo_sol, label="Theoretical Solution", color="purple")
+    ax.set_xlabel("t")
+    ax.set_ylabel("Amplitude")
+    ax.set_title("Comparison of numerical and theoretical linearised slow waves over time")
+    ax.legend()
+
+    output_dir = (
                 (input_path if input_path.is_dir() else input_path.parent) / "linearised_slow_wave_comparison"
                 if args.output_dir is None
                 else Path(args.output_dir).expanduser().resolve()
             )
-            output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
             
-            output_path = output_dir / f"{args.field1}_{args.field2}_{snapshot_path.stem}.png"
-            finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)
-            saved_paths.append(output_path)
+    output_path = output_dir / f"Linearised_slow_wave_beating.png"
+    finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)
+    saved_paths.append(output_path)
     
     return saved_paths
             
