@@ -182,6 +182,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
         
             
             numerical_sol= field1_line - field2_line* vA *1/np.sqrt(alpha)
+            max_z= np.max(numerical_sol)
 
             x_0= x[x_index]
             y_0=y[y_index]
@@ -201,8 +202,10 @@ def main(argv: list[str] | None = None) -> list[Path]:
             ax.plot(z, theoretical_sol, label="Theoretical Solution", color="purple")
             ax.set_xlabel("z")
             ax.set_ylabel("Amplitude")
+            ax.set_ylim(-max_z-0.1, max_z+0.1)
             ax.set_title(f"Comparison of numerical and theoretical linearised slow waves, t={time_value:.3f}")
             ax.legend()
+
            
            
             output_dir = (
