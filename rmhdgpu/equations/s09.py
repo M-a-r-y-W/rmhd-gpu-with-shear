@@ -324,13 +324,29 @@ def perpendicular_energy_spectra(
         backend,
         bin_width=bin_width,
     )
-
+    # Elsasser fields z ± = u_perp ∓ b_perp/sqrt(4 pi rho0) = z_hat x grad_perp(phi ∓ psi).
+    # The 1/4 weight is the standard pseudo-energy normalization, so that
+    # z_plus + z_minus = u_perp + b_perp shell by shell.
+    _, z_plus = perpendicular_shell_spectrum(
+        0.25 * kperp2 * (xp.abs(phi_hat - state["psi"]) ** 2),
+        grid,
+        backend,
+        bin_width=bin_width,
+    )
+    _, z_minus = perpendicular_shell_spectrum(
+        0.25 * kperp2 * (xp.abs(phi_hat + state["psi"]) ** 2),
+        grid,
+        backend,
+        bin_width=bin_width,
+    )
     return {
         "kperp": kperp,
         "u_perp": u_perp,
         "b_perp": b_perp,
-        "upar": upar,
-        "dbpar": dbpar,
+        "du_par": upar,
+        "db_par": dbpar,
+        "z_plus": z_plus,
+        "z_minus": z_minus,
     }
 
 
@@ -356,7 +372,6 @@ def total_energy_modal_density(state: State, grid: Any, backend: Any, params: An
         + 0.5 * xp.abs(state["upar"]) ** 2
         + 0.5 * p.dbpar_energy_weight * xp.abs(state["dbpar"]) ** 2
     )
-#STOPPED HERE THIS SECTION CONFUSING? UNSURE
 
 def total_energy(state: State, grid: Any, backend: Any, params: Any) -> float:
     """Return the volume-averaged total energy for this equation set."""
