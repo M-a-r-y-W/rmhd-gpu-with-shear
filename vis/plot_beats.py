@@ -212,8 +212,8 @@ def main(argv: list[str] | None = None) -> list[Path]:
 
     fig,ax= plt.subplots()
 
-    ax.plot(time, num_sol, label="Numerical Solution", color="black")
-    ax.plot(time, theo_sol, label="Theoretical Solution", color="purple")
+    ax.plot(time, num_sol, label="Numerical Solution", color="black", ls="-")
+    ax.plot(time, theo_sol, label="Theoretical Solution", color="purple", ls="--")
     ax.set_xlabel("t")
     ax.set_ylabel("Amplitude")
     ax.set_title("Comparison of numerical and theoretical linearised slow waves over time")
