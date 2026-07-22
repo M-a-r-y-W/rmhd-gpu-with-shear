@@ -106,6 +106,7 @@ class SpectraDiagnosticsWriter:
 
     def __init__(self, path: str | Path, k_column: str = "kperp") -> None:
         self.path = Path(path)
+        self.k_column = k_column
         self._handle = self.path.open("w", encoding="utf-8", newline="")
         self._writer = csv.DictWriter(
             self._handle,

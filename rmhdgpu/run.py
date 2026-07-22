@@ -660,8 +660,6 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
             summary["scalar_diagnostics_csv"] = str(scalar_csv_path)
         if output_cadence_enabled(config.t_out_spec):
             summary["spectra_csv"] = str(spectra_csv_path)
-        if output_cadence_enabled(config.t_out_spec_prl):
-            summary["spectra_prl_csv"] = str(spectra_prl_csv_path)
         if output_cadence_enabled(config.t_out_full):
             summary["fullfields_dir"] = str(fullfield_output_dir)
         logger.event("run complete", summary)

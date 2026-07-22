@@ -1,0 +1,51 @@
+title = "Testing for Alfven Waves full spectra"
+output_dir = "outputs"
+
+[equations]
+type = "shear"
+
+[grid]
+Nx = 64
+Ny = 64
+Nz = 64
+
+[time]
+tmax = 5.0
+dt_max = 1.5e-2
+cfl_number = 0.35
+
+[output]
+t_out_scal = 0.25
+t_out_spec = 0.50
+t_out_full = 0.0
+
+[backend]
+backend = "numpy"
+
+[physics]
+Ku=1.0
+
+[initial_condition]
+type = "random_spectrum_one_wave"
+
+[initial_condition.parameters]
+n_min_perp = 1.0
+n_max_perp = 3.0
+n_min_prl = 1.0
+n_max_prl = 3.0
+alpha = 3.0
+init_energy = 1.0
+seed = 1
+
+[dissipation]
+mode = "auto"
+n_perp = 3
+n_par = 1
+nu_par = 0.0
+kd_fraction = 0.6
+shell_half_width = 0.5
+update_every = 10
+smooth_factor = 0.2
+nu_min = 1e-12
+nu_max = 1e-2
+max_update_factor = 2.0
