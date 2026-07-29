@@ -55,6 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Quantities to plot. Defaults to all quantities in the file.",
     )
+    parser.add_argument("--Lperp-time", default=None, help="Time where Lperp is computed.")
     parser.add_argument("--output-dir", default=None, help="Directory for PNG outputs.")
     parser.add_argument("--colormap", default="viridis", help="Matplotlib colormap name.")
     parser.add_argument(
@@ -85,7 +86,20 @@ def _guide_line(kperp: np.ndarray, values: np.ndarray) -> tuple[np.ndarray, np.n
     guide = y_plot[anchor] * (k_plot / k_plot[anchor]) ** (-5.0 / 3.0)
     return k_plot, guide
 
+def integral_scale(k: np.ndarray, spectrum: np.ndarray) -> float | None:
+    """Return L = 1 / <k>, the energy-weighted inverse mean wavenumber.
 
+    <k> = sum(k * E(k)) / sum(E(k)), summed over bins with positive energy.
+    """
+    k_energy= spectrum > 0.0 # booleen mask
+    total_energy= float(np.sum(spectrum[k_energy])) # float guarantees output is a floating point number
+    if total_energy <= 0.0:
+       return None 
+    ave_k= float(np.sum(k[k_energy]*spectrum[k_energy])/total_energy)
+    if ave_k <= 0.0:
+       return None 
+    return 1.0 /ave_k
+    
 def main(argv: list[str] | None = None) -> list[Path]:
     args = build_parser().parse_args(argv)
     plt = import_pyplot(show=args.show)
@@ -123,6 +137,16 @@ def main(argv: list[str] | None = None) -> list[Path]:
                 ymax = max(ymax, float(np.max(values[mask])))
             ax.loglog(kperp[mask], values[mask], color=cmap(time_norm(time_value)), lw=2)
 
+        Lperp= None
+        if quantity=="z_plus":
+           if args.Lperp_time is not None:
+              outerscale_time= min(spectra[quantity], key=lambda t: abs(t - args.Lperp_time))
+           else:outerscale_time= latest_time 
+           kperpen, energy_perpen= spectra[quantity][outerscale_time]
+           Lperp= integral_scale(kperpen,energy_perpen)
+           if Lperp is not None:
+              ax.axvline(1/Lperp, color="0.55", ls="--", lw=1.5, label=rf"Lperp $={Lperp:.3f}$")
+
         guide_line = _guide_line(*latest_curve)
         if guide_line is not None:
             guide_k, guide_y = guide_line
@@ -138,7 +162,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
         ax.grid(True, alpha=0.25)
         if args.y_span_decades > 0.0 and ymax > 0.0:
             ax.set_ylim(ymax / (10.0 ** args.y_span_decades), ymax)
-        if guide_line is not None:
+        if guide_line or Lperp is not None:
             ax.legend(fontsize=8)
 
         output_path = output_dir / f"{quantity}.png"

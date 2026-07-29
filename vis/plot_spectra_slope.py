@@ -26,7 +26,7 @@ if __package__ in {None, ""}:
 import numpy as np
 
 from vis._matplotlib import finalize_figure, import_pyplot
-from vis.plot_spectra import _read_spectra_csv
+from vis.plot_spectra import _read_spectra_csv, integral_scale
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -80,6 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Without this a k^(-5/3) guide is drawn."
         ),
     )
+    parser.add_argument("--Lperp-time", default=None, help="Time where Lperp is computed.")
     parser.add_argument(
         "--show",
         action="store_true",
@@ -173,6 +174,17 @@ def main(argv: list[str] | None = None) -> list[Path]:
                 ymax = max(ymax, float(np.max(values[mask])))
             ax.loglog(kperp[mask], values[mask], color=cmap(time_norm(time_value)), lw=2)
 
+        Lperp= None
+        if quantity=="z_plus":
+            latest_time = max(spectra[quantity])
+            if args.Lperp_time is not None:
+                 outerscale_time= min(spectra[quantity], key=lambda t: abs(t - args.Lperp_time))
+            else:outerscale_time= latest_time 
+            kperpen, energy_perpen= spectra[quantity][outerscale_time]
+            Lperp= integral_scale(kperpen,energy_perpen)
+            if Lperp is not None:
+                ax.axvline(1/Lperp, color="0.55", ls="--", lw=1.5, label=rf"Lperp $={Lperp:.3f}$")
+        
         quantity_times = sorted(spectra[quantity])
         if args.fit_time is None:
             fit_time = quantity_times[-1]
@@ -223,7 +235,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
         ax.grid(True, alpha=0.25)
         if args.y_span_decades > 0.0 and ymax > 0.0:
             ax.set_ylim(ymax / (10.0 ** args.y_span_decades), ymax)
-        if fit is not None or guide_line is not None:
+        if fit is not None or guide_line is not None or Lperp is not None:
             ax.legend(fontsize=8)
 
         output_path = output_dir / f"{quantity}.png"
