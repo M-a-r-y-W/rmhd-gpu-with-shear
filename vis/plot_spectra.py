@@ -98,8 +98,8 @@ def integral_scale(k: np.ndarray, spectrum: np.ndarray) -> float | None:
     ave_k= float(np.sum(k[k_energy]*spectrum[k_energy])/total_energy)
     if ave_k <= 0.0:
        return None 
-    return 1.0 /ave_k
-    
+    return 2.0 * np.pi /ave_k
+
 def main(argv: list[str] | None = None) -> list[Path]:
     args = build_parser().parse_args(argv)
     plt = import_pyplot(show=args.show)
@@ -145,7 +145,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
            kperpen, energy_perpen= spectra[quantity][outerscale_time]
            Lperp= integral_scale(kperpen,energy_perpen)
            if Lperp is not None:
-              ax.axvline(1/Lperp, color="0.55", ls="--", lw=1.5, label=rf"Lperp $={Lperp:.3f}$")
+              ax.axvline(2.0 *np.pi/Lperp, color="0.55", ls="--", lw=1.5, label=rf"Lperp $={Lperp:.3f}$")
 
         guide_line = _guide_line(*latest_curve)
         if guide_line is not None:

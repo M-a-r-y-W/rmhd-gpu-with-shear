@@ -183,7 +183,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
             kperpen, energy_perpen= spectra[quantity][outerscale_time]
             Lperp= integral_scale(kperpen,energy_perpen)
             if Lperp is not None:
-                ax.axvline(1/Lperp, color="0.55", ls="--", lw=1.5, label=rf"Lperp $={Lperp:.3f}$")
+                ax.axvline(2.0 * np.pi / Lperp, color="0.55", ls="--", lw=1.5, label=rf"Lperp $={Lperp:.3f}$")
         
         quantity_times = sorted(spectra[quantity])
         if args.fit_time is None:

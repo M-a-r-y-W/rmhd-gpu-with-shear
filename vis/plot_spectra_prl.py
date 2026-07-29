@@ -175,7 +175,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
             kpara, energy_para= spectra[quantity][outerscale_time]
             Lpar= integral_scale(kpara,energy_para)
             if Lpar is not None:
-                ax.axvline(1/Lpar, color="0.55", ls="--", lw=1.5, label=rf"Lpar $={Lpar:.3f}$")
+                ax.axvline(2.0 * np.pi / Lpar, color="0.55", ls="--", lw=1.5, label=rf"Lpar $={Lpar:.3f}$")
         
         
         earliest_time = min(spectra[quantity])
