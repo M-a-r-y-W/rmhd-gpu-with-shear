@@ -96,7 +96,7 @@ def main(argv: list[str] | None = None) -> Path:
 
     
     output_path = (
-        csv_path.with_name(f"{args.quantity}_budget.png")
+        csv_path.with_name("Heating_rate.png")
         if args.output is None
         else Path(args.output).expanduser().resolve()
     )
@@ -104,13 +104,12 @@ def main(argv: list[str] | None = None) -> Path:
 
     fig, axes = plt.subplots()
   
-    term_linestyles = ["--", ":"]
     for index, term_name in enumerate(rhs_term_names):
         axes.plot(
             time,
             columns[term_name],
             lw=1.8,
-            ls=term_linestyles[index % len(term_linestyles)],
+            ls="-",
             label=term_name,
         )
     for idex, term_names in enumerate(rhs_term_names):
@@ -118,7 +117,8 @@ def main(argv: list[str] | None = None) -> Path:
         
     axes.axhline(0.0, color="0.4", lw=1.0, alpha=0.6)
     axes.set_xlabel("time")
-    axes.set_ylabel(r"shear and dissipation terms / d$_t Q$")
+    axes.set_title("Comparing energy dissipation and shear heating rates")
+    axes.set_ylabel(r"Shear and dissipation terms / d$_t Q$")
     axes.grid(True, alpha=0.3)
     axes.legend(fontsize=8)
 
