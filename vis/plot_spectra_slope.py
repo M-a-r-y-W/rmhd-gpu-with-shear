@@ -80,7 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Without this a k^(-5/3) guide is drawn."
         ),
     )
-    parser.add_argument("--Lperp-time", default=None, help="Time where Lperp is computed.")
+    parser.add_argument("--Lperp-time", type=float, default=None, help="Time where Lperp is computed.")
     parser.add_argument(
         "--show",
         action="store_true",
@@ -181,10 +181,12 @@ def main(argv: list[str] | None = None) -> list[Path]:
                  outerscale_time= min(spectra[quantity], key=lambda t: abs(t - args.Lperp_time))
             else:outerscale_time= latest_time 
             kperpen, energy_perpen= spectra[quantity][outerscale_time]
-            Lperp= integral_scale(kperpen,energy_perpen)
+            Lperp, z_plus_amp = integral_scale(kperpen,energy_perpen)
             if Lperp is not None:
                 ax.axvline(2.0 * np.pi / Lperp, color="0.55", ls="--", lw=1.5, label=rf"Lperp $={Lperp:.3f}$")
-        
+            if z_plus_amp is not None:
+                ax.plot([], [], ' ', label=rf"z_plus_amp $={z_plus_amp:.3f}$")
+
         quantity_times = sorted(spectra[quantity])
         if args.fit_time is None:
             fit_time = quantity_times[-1]
@@ -230,7 +232,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
         colorbar.set_label("time")
 
         ax.set_xlabel(r"$k_\perp$")
-        ax.set_ylabel("value")
+        ax.set_ylabel(r"$E[k_\perp]$")
         ax.set_title(quantity)
         ax.grid(True, alpha=0.25)
         if args.y_span_decades > 0.0 and ymax > 0.0:

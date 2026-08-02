@@ -160,7 +160,7 @@ def main(argv: list[str] | None = None) -> Path:
     axes[1].set_xlabel("time")
     axes[1].set_ylabel(r"budget terms / d$_t Q$")
     axes[1].grid(True, alpha=0.3)
-    axes[1].legend(fontsize=8)
+    axes[1].legend(loc="lower left",fontsize=8)
 
     finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)
     return output_path

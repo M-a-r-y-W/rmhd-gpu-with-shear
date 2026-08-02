@@ -100,7 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
             "(positive-valued) shell of the fitted snapshot."
         ),
     )
-    parser.add_argument("--Lpar-time", default=None, help="Time where Lpar is computed.")
+    parser.add_argument("--Lpar-time", type=float, default=None, help="Time where Lpar is computed.")
     parser.add_argument(
         "--show",
         action="store_true",
@@ -173,11 +173,12 @@ def main(argv: list[str] | None = None) -> list[Path]:
                 outerscale_time= min(spectra[quantity], key=lambda t: abs(t - args.Lpar_time))
             else:outerscale_time= latest_time 
             kpara, energy_para= spectra[quantity][outerscale_time]
-            Lpar= integral_scale(kpara,energy_para)
+            Lpar, z_parallel_amp = integral_scale(kpara,energy_para)
             if Lpar is not None:
                 ax.axvline(2.0 * np.pi / Lpar, color="0.55", ls="--", lw=1.5, label=rf"Lpar $={Lpar:.3f}$")
-        
-        
+            if z_parallel_amp is not None:
+                ax.plot([], [], ' ', label=rf"z_parallel_amp $={z_parallel_amp:.3f}$")
+
         earliest_time = min(spectra[quantity])
         _report_initial_modes(quantity, *spectra[quantity][earliest_time], earliest_time)
 
@@ -245,7 +246,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
         colorbar.set_label("time")
 
         ax.set_xlabel(r"$k_\parallel$")
-        ax.set_ylabel("value")
+        ax.set_ylabel(r"$E[k_\parallel]$")
         ax.set_title(quantity)
         ax.grid(True, alpha=0.25)
         if args.y_span_decades > 0.0 and ymax > 0.0:

@@ -55,7 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Quantities to plot. Defaults to all quantities in the file.",
     )
-    parser.add_argument("--Lperp-time", default=None, help="Time where Lperp is computed.")
+    parser.add_argument("--Lperp-time", type=float, default=None, help="Time where Lperp is computed.")
     parser.add_argument("--output-dir", default=None, help="Directory for PNG outputs.")
     parser.add_argument("--colormap", default="viridis", help="Matplotlib colormap name.")
     parser.add_argument(
@@ -83,22 +83,29 @@ def _guide_line(kperp: np.ndarray, values: np.ndarray) -> tuple[np.ndarray, np.n
     k_plot = kperp[valid]
     y_plot = values[valid]
     anchor = len(k_plot) // 2
-    guide = y_plot[anchor] * (k_plot / k_plot[anchor]) ** (-5.0 / 3.0)
+    guide = y_plot[anchor] * (k_plot / k_plot[anchor]) ** (-1.0)
     return k_plot, guide
 
-def integral_scale(k: np.ndarray, spectrum: np.ndarray) -> float | None:
+def integral_scale(k: np.ndarray, spectrum: np.ndarray) -> tuple[float, float] | tuple[None, None]:
     """Return L = 1 / <k>, the energy-weighted inverse mean wavenumber.
 
     <k> = sum(k * E(k)) / sum(E(k)), summed over bins with positive energy.
+    Return the amplitude of z_plus using energies around the outscale
     """
     k_energy= spectrum > 0.0 # booleen mask
     total_energy= float(np.sum(spectrum[k_energy])) # float guarantees output is a floating point number
     if total_energy <= 0.0:
-       return None 
+       return None, None 
     ave_k= float(np.sum(k[k_energy]*spectrum[k_energy])/total_energy)
     if ave_k <= 0.0:
-       return None 
-    return 2.0 * np.pi /ave_k
+       return None, None 
+    lout = 2.0 * np.pi /ave_k
+    kmin= float(ave_k-5.0) # Think about changing bounds by mutliplying by a fraction or the bin_width
+    kmax= float(ave_k+5.0) # bin_width = min(2.0 * np.pi / Lx, 2.0 * np.pi / Ly), would need config to get values from resolved toml file, see plot_linear.py
+    z_energy= float(np.sum(spectrum[(k>=kmin) & (k<=kmax)]))
+    Z_plus_amp= float(np.sqrt(4.0*z_energy))
+    return lout, Z_plus_amp
+
 
 def main(argv: list[str] | None = None) -> list[Path]:
     args = build_parser().parse_args(argv)
@@ -143,9 +150,11 @@ def main(argv: list[str] | None = None) -> list[Path]:
               outerscale_time= min(spectra[quantity], key=lambda t: abs(t - args.Lperp_time))
            else:outerscale_time= latest_time 
            kperpen, energy_perpen= spectra[quantity][outerscale_time]
-           Lperp= integral_scale(kperpen,energy_perpen)
+           Lperp, z_plus_amp = integral_scale(kperpen,energy_perpen)
            if Lperp is not None:
               ax.axvline(2.0 *np.pi/Lperp, color="0.55", ls="--", lw=1.5, label=rf"Lperp $={Lperp:.3f}$")
+           if z_plus_amp is not None: 
+            ax.plot([], [], ' ', label=rf"z_plus_amp $={z_plus_amp:.3f}$") 
 
         guide_line = _guide_line(*latest_curve)
         if guide_line is not None:
@@ -157,7 +166,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
         colorbar.set_label("time")
 
         ax.set_xlabel(r"$k_\perp$")
-        ax.set_ylabel("value")
+        ax.set_ylabel(r"$E[k_\perp]$")
         ax.set_title(quantity)
         ax.grid(True, alpha=0.25)
         if args.y_span_decades > 0.0 and ymax > 0.0:
