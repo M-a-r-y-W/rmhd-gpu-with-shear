@@ -86,15 +86,17 @@ def main(argv: list[str] | None = None) -> Path:
         if name == f"{args.quantity}_rhs_dissipation" or name == f"{args.quantity}_rhs_shear"
     )
 
-    steady_state_rate= np.empty(len(rhs_term_names))
+    steady_state_rate= np.full(len(rhs_term_names), np.nan)
     for Index, E_names in enumerate(rhs_term_names):
         idx= rolling_cv(columns[E_names], 30, 0.05, 10)
         if idx == None:
-           raise ValueError(f"No steady state detected for {E_names}")
+           print(f"No steady state detected for {E_names}")
+           steady_state_rate[Index]= None
+           continue
         Av_values= columns[E_names][idx:]
         steady_state_rate[Index]= np.mean(Av_values) 
 
-    
+
     output_path = (
         csv_path.with_name("Heating_rate.png")
         if args.output is None
@@ -113,7 +115,8 @@ def main(argv: list[str] | None = None) -> Path:
             label=term_name,
         )
     for idex, term_names in enumerate(rhs_term_names):
-        axes.axhline(steady_state_rate[idex],label= f"Steady state rate for {term_names} ={steady_state_rate[idex]:.3f}")
+        if not np.isnan(steady_state_rate[idex]):
+           axes.axhline(steady_state_rate[idex],label= f"Steady state rate for {term_names} ={steady_state_rate[idex]:.3f}")
         
     axes.axhline(0.0, color="0.4", lw=1.0, alpha=0.6)
     axes.set_xlabel("time")
