@@ -176,8 +176,8 @@ def main(argv: list[str] | None = None) -> list[Path]:
             Lpar, z_parallel_amp = integral_scale(kpara,energy_para)
             if Lpar is not None:
                 ax.axvline(2.0 * np.pi / Lpar, color="0.55", ls="--", lw=1.5, label=rf"Lpar $={Lpar:.3f}$")
-            if z_parallel_amp is not None:
-                ax.plot([], [], ' ', label=rf"z_parallel_amp $={z_parallel_amp:.3f}$")
+            #if z_parallel_amp is not None:
+            #    ax.plot([], [], ' ', label=rf"z_parallel_amp $={z_parallel_amp:.3f}$")
 
         earliest_time = min(spectra[quantity])
         _report_initial_modes(quantity, *spectra[quantity][earliest_time], earliest_time)

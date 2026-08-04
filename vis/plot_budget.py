@@ -118,7 +118,7 @@ def main(argv: list[str] | None = None) -> Path:
     fig, axes = plt.subplots(2, 1, figsize=(8.5, 7.0), constrained_layout=True, sharex=True)
 
     axes[0].plot(time, columns[args.quantity], lw=2, color="black", label=args.quantity)
-    axes[0].set_ylabel(args.quantity)
+    axes[0].set_ylabel("Total energy density")
     axes[0].set_title(f"{args.quantity} and budget comparison")
     axes[0].grid(True, alpha=0.3)
     axes[0].legend(fontsize=8)

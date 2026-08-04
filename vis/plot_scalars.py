@@ -107,7 +107,7 @@ def main(argv: list[str] | None = None) -> Path:
         ax.plot(time, columns[name], lw=2, label=name)
 
     ax.set_xlabel("time")
-    ax.set_ylabel("value")
+    ax.set_ylabel("Energy density")
     ax.set_title(args.title)
     if args.log:
         ax.set_yscale("log")

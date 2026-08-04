@@ -523,7 +523,8 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
                 time=t,
                 next_output_time=next_fullfield_output,
                 tmax=config.tmax,
-            ):
+            ):  
+                phi_hat=equation_module.derive_phi_hat(state["omega"], grid)
                 output_index = fullfield_writer.write_state(
                     state,
                     time=t,
@@ -531,6 +532,9 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
                     fft=fft,
                     backend=backend,
                     field_names=config.field_names,
+                    extra_fields_hat={
+                        "zplus": phi_hat + state["psi"]
+                    }
                 )
                 logger.event(
                     "full-field diagnostics",

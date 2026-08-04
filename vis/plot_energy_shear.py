@@ -105,7 +105,6 @@ def main(argv: list[str] | None = None) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     fig, axes = plt.subplots()
-  
     for index, term_name in enumerate(rhs_term_names):
         axes.plot(
             time,
@@ -113,6 +112,7 @@ def main(argv: list[str] | None = None) -> Path:
             lw=1.8,
             ls="-",
             label=term_name,
+            color="red"
         )
     for idex, term_names in enumerate(rhs_term_names):
         if not np.isnan(steady_state_rate[idex]):

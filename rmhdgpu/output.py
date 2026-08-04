@@ -19,7 +19,7 @@ from __future__ import annotations
 import csv
 import importlib
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 
@@ -195,6 +195,7 @@ class FullFieldHDF5Writer:
         fft: Any,
         backend: Any,
         field_names: list[str] | None = None,
+        extra_fields_hat: dict[str, Any] | None = None,
     ) -> int:
         output_index = self._next_index
         snapshot_path = self.snapshot_path(output_index)
@@ -203,6 +204,7 @@ class FullFieldHDF5Writer:
             fft,
             backend,
             field_names=state.field_names if field_names is None else field_names,
+            extra_fields_hat=extra_fields_hat,
         )
 
         with self._h5py.File(snapshot_path, "w") as handle:
