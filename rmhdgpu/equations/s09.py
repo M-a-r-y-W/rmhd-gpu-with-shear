@@ -57,6 +57,17 @@ SCALAR_DIAGNOSTIC_INFO = {
     "total_energy_rhs_shear": "Signed shear contribution to d_t total_energy.",
 }
 
+@dataclass(frozen=True, slots=True)
+class S09Parameters:
+    """Scalar parameters and diagnostic weights used by this equation set."""
+
+    vA: float
+    chi: float
+    alpha: float
+    gamma: float
+    dbpar_energy_weight: float
+    entropy_energy_weight: float
+
 
 def _param_float(params: Any, name: str) -> float:
     if isinstance(params, Mapping):
