@@ -64,9 +64,8 @@ class S09Parameters:
     vA: float
     chi: float
     alpha: float
-    gamma: float
+    Ku: float
     dbpar_energy_weight: float
-    entropy_energy_weight: float
 
 
 def _param_float(params: Any, name: str) -> float:
