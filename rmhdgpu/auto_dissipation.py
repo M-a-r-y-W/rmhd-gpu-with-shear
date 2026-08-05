@@ -63,6 +63,7 @@ class AutoDissipationController:
 
     settings: AutoDissipationSettings
     equation_module: Any
+    energy_density_func: Any
     field_names: list[str]
     grid: Any
     backend: Any
@@ -70,8 +71,10 @@ class AutoDissipationController:
     shell_mask: Any
     kd: float
     current_nu_perp: float
+    stop_time: float | None = None
     last_ud: float = 0.0
     last_Ed: float = 0.0
+    
 
     @classmethod
     def from_runtime(
@@ -83,7 +86,11 @@ class AutoDissipationController:
         grid: Any,
         backend: Any,
         dealias_mask: Any | None,
+        energy_density_func: Any = None,
+        stop_time:float | None = None
     ) -> "AutoDissipationController":
+        if energy_density_func is None:
+            energy_density_func = equation_module.total_energy_modal_density
         xp = backend.xp
         retained_mask = (
             xp.ones(grid.fourier_shape, dtype=grid.real_dtype)
@@ -114,7 +121,9 @@ class AutoDissipationController:
         return cls(
             settings=settings,
             equation_module=equation_module,
+            energy_density_func= energy_density_func,
             field_names=list(field_names),
+            stop_time=stop_time,
             grid=grid,
             backend=backend,
             retained_mask=retained_mask,
@@ -131,7 +140,7 @@ class AutoDissipationController:
     def update(self, state: Any, params: Any) -> float:
         """Refresh the effective coefficient from the current Fourier state."""
 
-        density_hat = self.equation_module.total_energy_modal_density(state, self.grid, self.backend, params)
+        density_hat = self.energy_density_func(state, self.grid, self.backend, params)
         self.last_Ed = modal_density_average(
             density_hat,
             self.grid,
@@ -164,25 +173,32 @@ class AutoDissipationController:
         self.current_nu_perp = min(max(nu_new, self.settings.nu_min), self.settings.nu_max)
         return self.current_nu_perp
 
-    def effective_dissipation(self) -> dict[str, dict[str, float | int]]:
+    def effective_dissipation(self, current_time: float) -> dict[str, dict[str, float | int]]:
         """Return the current fieldwise dissipation spec consumed by the operator builder."""
+        if self.stop_time is not None and current_time > self.stop_time:
+            nu_perp= 0.0
+            nu_par=0.0
+        else: 
+            nu_perp= float(self.current_nu_perp)
+            nu_par= float(self.settings.nu_par)
 
         common = {
-            "nu_perp": float(self.current_nu_perp),
-            "nu_par": float(self.settings.nu_par),
+            "nu_perp": nu_perp,
+            "nu_par": nu_par,
             "n_perp": int(self.settings.n_perp),
             "n_par": int(self.settings.n_par),
         }
+        
         return {field_name: dict(common) for field_name in self.field_names}
 
-    def diagnostics(self) -> dict[str, float]:
+    def diagnostics(self, prefix:str) -> dict[str, float]:
         """Return scalar-output diagnostics for the controller state."""
 
         return {
-            "auto_dissipation_enabled": 1.0,
-            "auto_dissipation_nu_perp": float(self.current_nu_perp),
-            "auto_dissipation_nu_par": float(self.settings.nu_par),
-            "auto_dissipation_kd": float(self.kd),
-            "auto_dissipation_ud": float(self.last_ud),
-            "auto_dissipation_Ed": float(self.last_Ed),
+            f"{prefix}_enabled": 1.0,
+            f"{prefix}_nu_perp": float(self.current_nu_perp),
+            f"{prefix}_nu_par": float(self.settings.nu_par),
+            f"{prefix}_kd": float(self.kd),
+            f"{prefix}_ud": float(self.last_ud),
+            f"{prefix}_Ed": float(self.last_Ed),
         }

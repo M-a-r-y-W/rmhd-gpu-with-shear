@@ -162,6 +162,8 @@ class Config:
     force_amplitudes: dict[str, float] | None = None
     forcing_seed: int | None = None
     field_names: list[str] | None = None
+    alfvenic_stop_time: float | None = None
+    slow_wave_stop_time: float | None = None
     dissipation: dict[str, dict[str, float | int]] | None = None
     auto_dissipation: AutoDissipationSettings | dict[str, Any] | None = None
 
@@ -322,6 +324,16 @@ class Config:
             cleaned_force_amplitudes[field_name] = amplitude_value
         self.force_amplitudes = cleaned_force_amplitudes
 
+        if self.alfvenic_stop_time is not None:
+            self.alfvenic_stop_time = float(self.alfvenic_stop_time)
+            if self.alfvenic_stop_time < 0.0:
+                raise ValueError(f"alfvenic_stop_time must be positive when provided; got {self.alfvenic_stop_time!r}.")
+
+        if self.slow_wave_stop_time is not None:
+            self.slow_wave_stop_time = float(self.slow_wave_stop_time)
+            if self.slow_wave_stop_time < 0.0:
+                raise ValueError(f"slow_wave_stop_time must be positive when provided; got {self.slow_wave_stop_time!r}.")
+        
         if self.dissipation is None:
             self.dissipation = _default_dissipation_for_fields(self.field_names)
         else:

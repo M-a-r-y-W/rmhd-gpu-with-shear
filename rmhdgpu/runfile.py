@@ -36,6 +36,7 @@ _TOP_LEVEL_KEYS = {
     "physics",
     "forcing",
     "dissipation",
+    "dissipation_stop",
     "initial_condition",
 }
 _SECTION_KEYS = {
@@ -57,6 +58,7 @@ _SECTION_KEYS = {
     "runtime": {"runtime_check_every", "progress_output_every", "fail_on_nonfinite", "dealias", "dealias_mode"},
     "physics": {"vA", "cs2_over_vA2", "N2", "Ku"},
     "forcing": {"use_forcing", "n_min_force", "n_max_force", "alpha_force", "forcing_seed", "force_amplitudes"},
+    "dissipation_stop":{"alfvenic_stop_time", "slow_wave_stop_time"}
 }
 _AUTO_DISSIPATION_KEYS = {
     "mode",
@@ -80,6 +82,7 @@ _SECTION_TO_CONFIG_KEYS = {
     "runtime": {"runtime_check_every", "progress_output_every", "fail_on_nonfinite", "dealias", "dealias_mode"},
     "physics": {"vA", "cs2_over_vA2", "N2", "Ku"},
     "forcing": {"use_forcing", "n_min_force", "n_max_force", "alpha_force", "forcing_seed"},
+    "dissipation_stop":{"alfvenic_stop_time", "slow_wave_stop_time"}
 }
 
 
@@ -302,6 +305,11 @@ def cli_overrides_from_args(args: argparse.Namespace) -> dict[str, Any]:
         if cli_key in values:
             _set_section("physics", config_key, values[cli_key])
 
+    dissipation_stop_map = {"alfvenic_stop_time": "alfvenic_stop_time", "slow_wave_stop_time": "slow_wave_stop_time"}
+    for cli_key, config_key in dissipation_stop_map.items():
+        if cli_key in values:
+            _set_section("dissipation_stop", config_key, values[cli_key])
+    
     forcing_map = {
         "use_forcing": "use_forcing",
         "forcing_seed": "forcing_seed",
@@ -355,7 +363,7 @@ def _document_to_config_values(document: dict[str, Any]) -> dict[str, Any]:
     equations = _require_table(document, "equations")
     equation_set = str(equations.get("type", "s09"))
     config_values = default_config_dict_for_equation(equation_set)
-    for section_name in ("equations", "grid", "time", "output", "backend", "runtime", "physics", "forcing"):
+    for section_name in ("equations", "grid", "time", "output", "backend", "runtime", "physics", "forcing", "dissipation_stop"):
         section_data = _require_table(document, section_name)
         _apply_section_to_config_dict(config_values, section_name, section_data)
 
@@ -437,6 +445,8 @@ def _resolved_document(
             "alpha_force": config.alpha_force,
             "forcing_seed": config.forcing_seed,
             "force_amplitudes": deepcopy(config.force_amplitudes),
+            "alfvenic_stop_time": config.alfvenic_stop_time,
+            "slow_wave_stop_time": config.slow_wave_stop_time,
             "dissipation": deepcopy(config.dissipation),
             "auto_dissipation": asdict(config.auto_dissipation),
         }
@@ -487,6 +497,10 @@ def _resolved_document(
             "cs2_over_vA2": config_values["cs2_over_vA2"],
             "N2": config_values["N2"],
             "Ku": config_values["Ku"],
+        },
+        "dissipation_stop":{
+            "alfvenic_stop_time": config_values["alfvenic_stop_time"],
+            "slow_wave_stop_time": config_values["slow_wave_stop_time"],
         },
         "forcing": {
             "use_forcing": config_values["use_forcing"],

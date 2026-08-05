@@ -58,17 +58,6 @@ SCALAR_DIAGNOSTIC_INFO = {
 }
 
 
-@dataclass(frozen=True, slots=True)
-class S09Parameters:
-    """Scalar parameters and diagnostic weights used by this equation set."""
-
-    vA: float
-    chi: float
-    alpha: float
-    Ku: float # Introduce changes here
-    dbpar_energy_weight: float
-
-
 def _param_float(params: Any, name: str) -> float:
     if isinstance(params, Mapping):
         return float(params[name])
@@ -344,6 +333,40 @@ def parallel_energy_spectra(
         spectra.setdefault("kprl", kprl)
         spectra[name] = spectrum
     return spectra
+
+def alfvenic_energy_modal_density(state: State, grid: Any, backend: Any, params: Any) -> Any:
+    """Return the modal quadratic density for the alfvenic energy.
+
+    The Alfvénic fields are measured as physical perpendicular amplitudes:
+    `u_perp ~ grad_perp phi` and `b_perp ~ grad_perp psi`. Therefore the modal
+    density uses `k_perp^2 |phi_hat|^2` and `k_perp^2 |psi_hat|^2`, not raw
+    potential amplitudes.
+
+    In code variables:
+
+    `E = 0.5 * (|grad_perp phi|^2 + |grad_perp psi|^2 ).
+    """
+
+    xp = backend.xp
+    phi_hat = derive_phi_hat(state["omega"], grid)
+    return (
+        0.5 * grid.kperp2 * (xp.abs(phi_hat) ** 2 + xp.abs(state["psi"]) ** 2)
+    )
+
+def slow_wave_energy_modal_density(state: State, grid: Any, backend: Any, params: Any) -> Any:
+    """Return the modal quadratic density for the slow wave energy.
+
+    In code variables:
+
+    `E = 0.5 * (|upar|^2 + alpha^(-1) |dbpar|^2).`
+    """
+
+    xp = backend.xp
+    p = derived_parameters(params)
+    return (0.5 * xp.abs(state["upar"]) ** 2
+        + 0.5 * p.dbpar_energy_weight * xp.abs(state["dbpar"]) ** 2
+    )
+
 
 def total_energy_modal_density(state: State, grid: Any, backend: Any, params: Any) -> Any:
     """Return the modal quadratic density for the S09 total energy.

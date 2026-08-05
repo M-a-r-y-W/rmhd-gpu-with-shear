@@ -187,7 +187,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
             if Kmin is not None:
                 ax.axvline(Kmin, color="0.55", ls=":", lw=1.5)
             if Kmax is not None:
-                ax.axvline(Kmax, color="O.55", ls=":", lw=1.5)
+                ax.axvline(Kmax, color="0.55", ls=":", lw=1.5)
             if z_plus_amp is not None: 
                 ax.plot([], [], ' ', label=rf"z_plus_amp $={z_plus_amp:.3f}$") 
 

@@ -83,7 +83,7 @@ def _guide_line(kperp: np.ndarray, values: np.ndarray) -> tuple[np.ndarray, np.n
     k_plot = kperp[valid]
     y_plot = values[valid]
     anchor = len(k_plot) // 2
-    guide = y_plot[anchor] * (k_plot / k_plot[anchor]) ** (-1.0)
+    guide = y_plot[anchor] * (k_plot / k_plot[anchor]) ** (-5.0/3.0)
     return k_plot, guide
 
 def integral_scale(k: np.ndarray, spectrum: np.ndarray) -> tuple[float, float] | tuple[None, None]:
@@ -95,10 +95,10 @@ def integral_scale(k: np.ndarray, spectrum: np.ndarray) -> tuple[float, float] |
     k_energy= spectrum > 0.0 # booleen mask
     total_energy= float(np.sum(spectrum[k_energy])) # float guarantees output is a floating point number
     if total_energy <= 0.0:
-       return None, None 
+       return None, None, None, None 
     ave_k= float(np.sum(k[k_energy]*spectrum[k_energy])/total_energy)
     if ave_k <= 0.0:
-       return None, None 
+       return None, None, None, None 
     lout = 2.0 * np.pi /ave_k
     kmin= float(ave_k-5.0) # Think about changing bounds by mutliplying by a fraction or the bin_width
     kmax= float(ave_k+5.0) # bin_width = min(2.0 * np.pi / Lx, 2.0 * np.pi / Ly), would need config to get values from resolved toml file, see plot_linear.py
@@ -156,7 +156,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
            if Kmin is not None:
               ax.axvline(Kmin, color="0.55", ls=":", lw=1.5)
            if Kmax is not None:
-               ax.axvline(Kmax, color="O.55", ls=":", lw=1.5)
+               ax.axvline(Kmax, color="0.55", ls=":", lw=1.5)
            if z_plus_amp is not None: 
               ax.plot([], [], ' ', label=rf"z_plus_amp $={z_plus_amp:.3f}$") 
 
