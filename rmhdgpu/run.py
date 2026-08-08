@@ -342,31 +342,39 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
             alfvenic_controller = AutoDissipationController.from_runtime(
                 settings=config.auto_dissipation,
                 equation_module=equation_module,
-                energy_density_func=equation_module.alfvenic_energy_modal_density,
+                energy_density_func=getattr(equation_module, "alfvenic_energy_modal_density", None),
                 field_names=["psi", "omega"],
                 grid=grid,
                 backend=backend,
                 dealias_mask=mask,
                 stop_time=config.alfvenic_stop_time
             )
-            slow_wave_controller = AutoDissipationController.from_runtime(
-                settings=config.auto_dissipation,
-                equation_module=equation_module,
-                energy_density_func=equation_module.slow_wave_energy_modal_density,
-                field_names=["upar", "dbpar"],
-                grid=grid,
-                backend=backend,
-                dealias_mask=mask,
-                stop_time=config.slow_wave_stop_time
-            )
             alfvenic_controller.update(state, config)
-            slow_wave_controller.update(state,config)
-            auto_dissipation_diagnostics = alfvenic_controller.diagnostics("alfvenic") | slow_wave_controller.diagnostics("slow_wave")
-            linear_ops = equation_module.build_dissipation_operators(
-                grid,
-                config,
-                dissipation_spec=alfvenic_controller.effective_dissipation(t) | slow_wave_controller.effective_dissipation(t)
-            )
+            if hasattr(equation_module, "slow_wave_energy_modal_density"):
+                slow_wave_controller = AutoDissipationController.from_runtime(
+                    settings=config.auto_dissipation,
+                    equation_module=equation_module,
+                    energy_density_func=equation_module.slow_wave_energy_modal_density,
+                    field_names=["upar", "dbpar"],
+                    grid=grid,
+                    backend=backend,
+                    dealias_mask=mask,
+                    stop_time=config.slow_wave_stop_time
+                )
+                slow_wave_controller.update(state,config)
+                auto_dissipation_diagnostics = alfvenic_controller.diagnostics("alfvenic") | slow_wave_controller.diagnostics("slow_wave")
+                linear_ops = equation_module.build_dissipation_operators(
+                    grid,
+                    config,
+                    dissipation_spec=alfvenic_controller.effective_dissipation(t) | slow_wave_controller.effective_dissipation(t)
+                    )
+            else:   
+                auto_dissipation_diagnostics = alfvenic_controller.diagnostics("alfvenic")
+                linear_ops = equation_module.build_dissipation_operators(
+                    grid,
+                    config,
+                    dissipation_spec=alfvenic_controller.effective_dissipation(t) 
+                )           
         else:
             linear_ops = equation_module.build_dissipation_operators(grid, config)
 
@@ -636,14 +644,23 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
                 slow_wave_updated= slow_wave_controller is not None and slow_wave_controller.should_update(steps)
                 if slow_wave_updated:
                     slow_wave_controller.update(state,config)
-
-                if alfvenic_updated or slow_wave_updated:
-                    auto_dissipation_diagnostics = alfvenic_controller.diagnostics("alfvenic") | slow_wave_controller.diagnostics("slow_wave")
-                    linear_ops = equation_module.build_dissipation_operators(
-                        grid,
-                        config,
-                        dissipation_spec=alfvenic_controller.effective_dissipation(t) | slow_wave_controller.effective_dissipation(t),
-                    )
+                
+                if slow_wave_controller is not None:
+                    if alfvenic_updated or slow_wave_updated:
+                        auto_dissipation_diagnostics = alfvenic_controller.diagnostics("alfvenic") | slow_wave_controller.diagnostics("slow_wave")
+                        linear_ops = equation_module.build_dissipation_operators(
+                            grid,
+                            config,
+                            dissipation_spec=alfvenic_controller.effective_dissipation(t) | slow_wave_controller.effective_dissipation(t),
+                        )
+                elif alfvenic_controller is not None:
+                    if alfvenic_updated:
+                        auto_dissipation_diagnostics = alfvenic_controller.diagnostics("alfvenic") 
+                        linear_ops = equation_module.build_dissipation_operators(
+                            grid,
+                            config,
+                            dissipation_spec=alfvenic_controller.effective_dissipation(t),
+                        )
 
                 if config.progress_output_every is not None and (
                     steps % config.progress_output_every == 0 or t >= config.tmax - 1.0e-15

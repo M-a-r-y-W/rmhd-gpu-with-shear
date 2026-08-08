@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+import math
+import h5py
 
 from rmhdgpu.equations import get_equation_module
 from rmhdgpu.forcing import shaped_random_real_field, shaped_random_real_field_perp_prl
@@ -431,6 +433,29 @@ def _normalize_random_spectrum_one_wave_parameters(parameters: dict[str, Any]) -
 
     return normalized
 
+def _normalize_zplus_snapshot_from_file_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
+    allowed= {"snapshot_path"}
+    _reject_unknown_parameters("zplus_snapshot_from_file", parameters, allowed)
+    if "snapshot_path" not in parameters:
+        raise ValueError("snapshot path is required")
+    if not isinstance(parameters["snapshot_path"],str):
+        raise ValueError("snapshot path needs to be a string")
+    return {"snapshot_path": parameters["snapshot_path"]}
+
+def _grid_check_with_snapshot(grid: Any, attrs)-> None:
+    for name in ("Nx", "Ny", "Nz"):
+        grid_value = int(getattr(grid,name))
+        snapshot_value= int(attrs[name])
+        if grid_value != snapshot_value:
+            raise ValueError(f"Snapshot value grid size {name!r}={snapshot_value!r} does not match grid for new simulation {name!r}={grid_value!r}")
+
+    for name in ("Lx", "Ly", "Lz"):
+        grid_value = float(getattr(grid,name))
+        snapshot_value= float(attrs[name])
+        if not math.isclose(grid_value, snapshot_value, rel_tol=1e-9):
+            raise ValueError(f"Snapshot value grid volume {name!r}={snapshot_value!r} does not match grid volume for new simulation {name!r}={grid_value!r}") 
+    return
+
 def _rescale_state_to_total_energy(
     state: State,
     *,
@@ -735,3 +760,40 @@ def random_spectrum_one_wave(
         backend=backend,
         params=params,
     )
+
+@register_initial_condition(
+    "zplus_snapshot_from_file",
+    normalize_parameters=_normalize_zplus_snapshot_from_file_parameters,
+    description="Uses zplus snapshot file (.h5)to initialise the simulation",
+)
+def zplus_snapshot_from_file(
+    *,
+    parameters: Mapping[str, Any] | None = None,
+    grid: Any,
+    backend: Any,
+    fft: Any,
+    dealias_mask: Any | None,
+    field_names: Sequence[str],
+    params: Any,
+) -> State:
+    """
+    Builds an initial condition using the z plus snapshot file (.h5) provided. 
+    The grid size and grid volume of the snapshot is checked to ensure it matches the grid initialised for the new simulation.
+    """
+    normalized = _normalize_zplus_snapshot_from_file_parameters(_as_parameter_dict(parameters))
+    path= normalized["snapshot_path"]
+    if not path.endswith(".h5"):
+        raise ValueError("Run snapshot file must end with .h5 suffix.")
+    _require_fields("zplus_snapshot_from_file", field_names, ("psi", "omega"))
+    with h5py.File(path, "r") as handle:
+       _grid_check_with_snapshot(grid,handle["metadata"].attrs)
+       if "zplus" not in handle["output"]:
+          raise ValueError("No zplus fields were computed in the fullfield")
+       zplus_field=handle["output"]["zplus"][...]
+    zplus_hat=_masked_r2c(zplus_field,fft=fft,dealias_mask=dealias_mask)
+    state = State(grid, backend, field_names=list(field_names))
+    state["psi"][...]= 0.5*zplus_hat
+    state["omega"][...]= lap_perp(0.5*zplus_hat,grid)
+
+    return state
+
