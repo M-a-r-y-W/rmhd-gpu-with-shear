@@ -21,7 +21,7 @@ import numpy as np
 
 from rmhdgpu.diagnostics.budget import flatten_conserved_quantity_budgets
 from rmhdgpu.diagnostics.scalar import STANDARD_ENERGY_SCALAR_DIAGNOSTIC_INFO
-from rmhdgpu.diagnostics.spectra import perpendicular_shell_spectrum
+from rmhdgpu.diagnostics.spectra import perpendicular_shell_spectrum, parallel_shell_spectrum
 from rmhdgpu.fourier_diagnostics import modal_average
 from rmhdgpu.operators import inv_lap_perp, lap_perp, poisson_bracket
 from rmhdgpu.state import State
@@ -34,6 +34,9 @@ DEFAULT_INITIAL_CONDITION = "alfven_mode"
 SCALAR_DIAGNOSTIC_INFO = {
     **STANDARD_ENERGY_SCALAR_DIAGNOSTIC_INFO,
     "alfvenic_energy": "Total two-field Alfvenic energy: 0.5 <|grad phi|^2 + |grad psi|^2>.",
+    "z_plus_energy": "Total two_field Alfvenic energy propagating outwards: 0.25 <|grad phi + grad psi|^2>",
+    "z_minus_energy": "Total two_field Alfvenic energy propagating inwards: 0.25 <|grad phi - grad psi|^2>", 
+    "normalised_cross_helicity": "Normalised cross helicity: (z_plus_energy - z_minus_energy) / alfvenic_energy",
 }
 
 _ORIGINAL_POISSON_BRACKET = poisson_bracket
@@ -308,6 +311,29 @@ def build_dissipation_operators(
         for name in names
     }
 
+def _energy_modal_densities(
+    state: State,
+    grid: Any,
+    backend: Any,
+    params: Any | None,
+) -> dict[str, Any]:
+    """Return the modal energy densities binned into the shell spectra."""
+
+    xp = backend.xp
+    #p = derived_parameters(params) redundant
+    phi_hat = derive_phi_hat(state["omega"], grid)
+    kperp2 = grid.kperp2
+
+  # Elsasser fields z± = u_perp ± b_perp/sqrt(4 pi rho0) = z_hat x grad_perp(phi ± psi).
+    # The 1/4 weight is the standard pseudo-energy normalization, so that
+    # z_plus + z_minus = u_perp + b_perp shell by shell.
+
+    return {
+        "u_perp": 0.5 * kperp2 * (xp.abs(phi_hat) ** 2),
+        "b_perp": 0.5 * kperp2 * (xp.abs(state["psi"]) ** 2),
+        "z_plus": 0.25 * kperp2 * (xp.abs(phi_hat + state["psi"]) ** 2),
+        "z_minus": 0.25 * kperp2 * (xp.abs(phi_hat - state["psi"]) ** 2),
+    }
 
 def perpendicular_energy_spectra(
     state: State,
@@ -317,26 +343,44 @@ def perpendicular_energy_spectra(
     bin_width: float | None = None,
     params: Any | None = None,
 ) -> dict[str, np.ndarray]:
-    """Return perpendicular shell spectra for the Alfvénic energy pieces."""
+    """Return the two-field Alfvenic rmhd shell spectra."""
 
-    xp = backend.xp
-    phi_hat = derive_phi_hat(state["omega"], grid)
-    kperp2 = grid.kperp2
+    spectra: dict[str, np.ndarray] = {}
+    for name, density in _energy_modal_densities(state, grid, backend, params).items():
+        kperp, spectrum = perpendicular_shell_spectrum(density, grid, backend, bin_width=bin_width)
+        spectra.setdefault("kperp", kperp)
+        spectra[name] = spectrum
+    return spectra
 
-    kperp, u_perp = perpendicular_shell_spectrum(
-        0.5 * kperp2 * (xp.abs(phi_hat) ** 2),
-        grid,
-        backend,
-        bin_width=bin_width,
-    )
-    _, b_perp = perpendicular_shell_spectrum(
-        0.5 * kperp2 * (xp.abs(state["psi"]) ** 2),
-        grid,
-        backend,
-        bin_width=bin_width,
-    )
-    return {"kperp": kperp, "u_perp": u_perp, "b_perp": b_perp}
+def parallel_energy_spectra(
+    state: State,
+    grid: Any,
+    backend: Any,
+    *,
+    bin_width: float | None = None,
+    params: Any | None = None,
+) -> dict[str, np.ndarray]:
+    """Return the two-field Alfvenic rmhd parallel (kz) shell spectra."""
 
+    spectra: dict[str, np.ndarray] = {}
+    for name, density in _energy_modal_densities(state, grid, backend, params).items():
+        kprl, spectrum = parallel_shell_spectrum(density, grid, backend, bin_width=bin_width)
+        spectra.setdefault("kprl", kprl)
+        spectra[name] = spectrum
+    return spectra
+
+
+def z_plus_energy(state:State, grid:Any, backend:Any, params:Any)-> float:
+    """Return the total z+ energy: 0.25 <|grad phi + grad psi|^2>."""
+
+    z_plus_density= _energy_modal_densities(state,grid,backend,params)["z_plus"]
+    return modal_average(z_plus_density, grid, backend)
+
+def z_minus_energy(state:State, grid:Any, backend:Any, params:Any)-> float:
+    """Return the total z- energy: 0.25 <|grad phi - grad psi|^2>."""
+
+    z_minus_density= _energy_modal_densities(state,grid,backend,params)["z_minus"]
+    return modal_average(z_minus_density, grid, backend)
 
 def total_energy_modal_density(state: State, grid: Any, backend: Any, params: Any) -> Any:
     """Return the modal quadratic density for the two-field Alfvénic energy."""
@@ -357,6 +401,12 @@ def alfvenic_energy(state: State, grid: Any, backend: Any, params: Any) -> float
 
     return total_energy(state, grid, backend, params)
 
+def normalised_cross_helicity(state: State, grid: Any, backend: Any, params: Any)-> float:
+    unnormalised= z_plus_energy(state, grid, backend, params)- z_minus_energy(state, grid, backend, params)
+    total_A_energy= alfvenic_energy(state, grid, backend, params)
+    if not np.isfinite(total_A_energy) or abs(total_A_energy) <= 1.0e-30:
+        return 0.0
+    return unnormalised / total_A_energy
 
 def total_energy_dissipation_rhs(
     state: State,
@@ -422,6 +472,9 @@ def compute_equation_scalar_diagnostics(
 
     diagnostics = {
         "alfvenic_energy": alfvenic_energy(state, grid, backend, params),
+        "z_plus_energy": z_plus_energy(state, grid, backend, params),
+        "z_minus_energy": z_minus_energy(state, grid, backend, params), 
+        "normalised_cross_helicity": normalised_cross_helicity(state, grid, backend, params),
     }
 
     budgets = compute_conserved_quantity_budgets(
