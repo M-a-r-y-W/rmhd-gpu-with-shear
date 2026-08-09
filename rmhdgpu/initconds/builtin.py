@@ -790,6 +790,7 @@ def zplus_snapshot_from_file(
        if "zplus" not in handle["output"]:
           raise ValueError("No zplus fields were computed in the fullfield")
        zplus_field=handle["output"]["zplus"][...]
+    zplus_field = backend.asarray(zplus_field, dtype=grid.real_dtype)
     zplus_hat=_masked_r2c(zplus_field,fft=fft,dealias_mask=dealias_mask)
     state = State(grid, backend, field_names=list(field_names))
     state["psi"][...]= 0.5*zplus_hat
