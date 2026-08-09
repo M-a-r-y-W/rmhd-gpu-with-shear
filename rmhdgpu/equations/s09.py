@@ -50,9 +50,10 @@ DEFAULT_INITIAL_CONDITION = "alfven_mode"
 # entries are S09-specific energy partitions useful for quick run inspection.
 SCALAR_DIAGNOSTIC_INFO = {
     **STANDARD_ENERGY_SCALAR_DIAGNOSTIC_INFO,
-    "alfvenic_energy": "Alfvenic part of the S09 energy: 0.5 <|grad phi|^2 + |grad psi|^2>.",
+    "alfvenic_energy": "Alfvenic part of the shear energy: 0.5 <|grad phi|^2 + |grad psi|^2>.",
     "upar_energy": "Unweighted kinetic parallel energy proxy: 0.5 <upar^2>.",
     "dbpar_energy": "Unweighted magnetic-compressive energy proxy: 0.5 <dbpar^2>.",
+    "dbpar_energy_weighted": "Weighted magnetic-compressive energy proxy: 0.5 <alpha^(-1) dbpar^2>.",
     "total_energy_proxy": "Legacy unweighted sum of alfvenic_energy, upar_energy, dbpar_energy.",
     "total_energy_rhs_shear": "Signed shear contribution to d_t total_energy.",
 }
@@ -522,10 +523,12 @@ def compute_equation_scalar_diagnostics(
     alfvenic = alfvenic_energy(state, grid, backend)
     upar = _unweighted_field_energy(state["upar"], grid, backend)
     dbpar = _unweighted_field_energy(state["dbpar"], grid, backend)
+    dbpar_weight = derived_parameters(params).dbpar_energy_weight
     diagnostics = {
         "alfvenic_energy": alfvenic,
         "upar_energy": upar,
         "dbpar_energy": dbpar,
+        "dbpar_energy_weighted": dbpar * dbpar_weight,
         "total_energy_proxy": alfvenic + upar + dbpar,
     }
 
