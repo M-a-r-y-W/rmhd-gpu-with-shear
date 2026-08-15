@@ -247,7 +247,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
 
         sm = cm.ScalarMappable(norm=time_norm, cmap=cmap)
         colorbar = fig.colorbar(sm, ax=ax)
-        colorbar.set_label("time")
+        colorbar.set_label("Time / $\tau_A$")
 
         ax.set_xlabel(r"$k_\parallel$")
         ax.set_ylabel(r"$E[k_\parallel]$")

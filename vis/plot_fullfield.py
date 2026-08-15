@@ -165,7 +165,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
             extent=extent,
             aspect="auto",
         )
-        fig.colorbar(image, ax=ax, label=f"{args.field} amplitude")
+        fig.colorbar(image, ax=ax, label=r"Amplitude")
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
         ax.set_title(rf"{args.field} {args.slice_dir} index={slice_index}, t={time_value:.3f} $\tau_A$, step={step_value}")

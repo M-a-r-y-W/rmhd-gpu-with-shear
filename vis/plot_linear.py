@@ -256,10 +256,9 @@ def main(argv: list[str] | None = None) -> list[Path]:
             ax.set_xlabel("z")
             ax.set_ylabel("Amplitude")
             ax.set_ylim(-max_z, max_z)
-            ax.set_title(f"Comparison of numerical and theoretical linearised slow waves, t={time_value:.3f}")
+            ax.set_title(f"Comparison of Numerical and Theoretical Linearised Slow Waves, t={time_value:.3f}")
             ax.legend()
             ax.grid(True, which="both", ls="--", lw=0.4)
-
            
            
             output_dir = (

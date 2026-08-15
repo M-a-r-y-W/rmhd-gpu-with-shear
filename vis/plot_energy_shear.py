@@ -104,7 +104,7 @@ def main(argv: list[str] | None = None) -> Path:
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    colours = ["red", "cyan"]
+    colours = ["red", "blue"]
     fig, axes = plt.subplots()
     for index, term_name in enumerate(rhs_term_names):
         axes.plot(
@@ -117,12 +117,12 @@ def main(argv: list[str] | None = None) -> Path:
         )
     for idex, term_names in enumerate(rhs_term_names):
         if not np.isnan(steady_state_rate[idex]):
-           axes.axhline(steady_state_rate[idex],label= f"Steady state rate for {term_names} ={steady_state_rate[idex]:.3f}", color= "green", lw=1.5, ls="--")
+           axes.axhline(steady_state_rate[idex],label= f"Steady state rate for {term_names} ={steady_state_rate[idex]:.3f}", color= "0.4", lw=1.5, ls="--")
         
     axes.axhline(0.0, color="0.4", lw=1.0, alpha=0.6)
     axes.set_xlabel(r"Time / $\tau_A$")
     axes.set_title("Comparing Energy Dissipation and Shear Heating Rates")
-    axes.set_ylabel(r"Shear and Dissipation Terms d$_t Q$")
+    axes.set_ylabel(r"Energy Rates /d$_t Q$")
     axes.grid(True, alpha=0.3)
     axes.legend(fontsize=8)
 
