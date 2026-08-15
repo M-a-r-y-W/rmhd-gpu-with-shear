@@ -226,7 +226,8 @@ def main(argv: list[str] | None = None) -> list[Path]:
         else:
             print(f"{quantity}: not enough points to fit a slope (t={fit_time:g}).")
 
-        guide_line = _guide_line(*fit_curve, slope=guide_slope)
+        # guide_line = _guide_line(*fit_curve, slope=guide_slope) # Set to none to remove guideline
+        guide_line=None
         if guide_line is not None:
             guide_k, guide_y = guide_line
             ax.loglog(guide_k, guide_y, color="0.55", ls=":", lw=1.6, label=guide_label)

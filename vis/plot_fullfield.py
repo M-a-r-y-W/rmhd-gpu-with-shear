@@ -168,7 +168,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
         fig.colorbar(image, ax=ax, label="Amplitude")
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
-        ax.set_title(rf"{args.field} {args.slice_dir} index={slice_index}, t={time_value:.3f} $\tau_A$, step={step_value}")
+        ax.set_title(rf"{args.field}: {args.slice_dir} index={slice_index}, t={time_value:.3f} $\tau_A$, step={step_value}")
 
         output_path = output_dir / f"{args.field}_{args.slice_dir}_{key}.png"
         finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)

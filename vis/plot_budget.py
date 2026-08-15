@@ -157,7 +157,7 @@ def main(argv: list[str] | None = None) -> Path:
         label=rf"closure residual: measured d$_t$ {args.quantity} - sum(saved RHS terms)",
     )
     axes[1].axhline(0.0, color="0.4", lw=1.0, alpha=0.6)
-    axes[1].set_xlabel("Time / $\tau_A$")
+    axes[1].set_xlabel(r"Time / $\tau_A$")
     axes[1].set_ylabel(r"Energy Rate / d$_t Q$")
     axes[1].grid(True, alpha=0.3)
     axes[1].legend(fontsize=8)
