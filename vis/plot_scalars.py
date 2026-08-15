@@ -106,8 +106,8 @@ def main(argv: list[str] | None = None) -> Path:
     for name in plotted_columns:
         ax.plot(time, columns[name], lw=2, label=name)
 
-    ax.set_xlabel("time")
-    ax.set_ylabel("Energy density")
+    ax.set_xlabel(r"Time / $\tau_A$")
+    ax.set_ylabel("Energy Density")
     ax.set_title(args.title)
     if args.log:
         ax.set_yscale("log")
