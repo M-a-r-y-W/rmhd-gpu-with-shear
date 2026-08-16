@@ -115,7 +115,7 @@ def main(argv: list[str] | None = None) -> Path:
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    fig, axes = plt.subplots()
+    fig, axes = plt.subplot_mosaic(['top', 'top'])
 
     axes.set_title("Total Energy Density and Energy Budget Comparison")
 
@@ -156,10 +156,15 @@ def main(argv: list[str] | None = None) -> Path:
     axes.set_xlabel(r"Time / $\tau_A$")
     axes.set_ylabel(r"Energy Density Rate / d$_t Q$")
     axes.grid(True, alpha=0.3)
-    axes.legend(fontsize=8, loc="best")
+    axes['top'].legend(bbox_to_anchor=(0., 1.02, 1., .102), loc='lower left', ncols=2, mode="expand", borderaxespad=0.)
+    # axes.legend(fontsize=8, loc="best")
 
     finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)
     return output_path
+
+
+
+
 
 
 if __name__ == "__main__":
