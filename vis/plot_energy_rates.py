@@ -156,8 +156,7 @@ def main(argv: list[str] | None = None) -> Path:
     axes.set_xlabel(r"Time / $\tau_A$")
     axes.set_ylabel(r"Energy Density Rate / d$_t Q$")
     axes.grid(True, alpha=0.3)
-    axes['top'].legend(bbox_to_anchor=(0., 1.02, 1., .102), loc='lower left', ncols=2, mode="expand", borderaxespad=0.)
-    # axes.legend(fontsize=8, loc="best")
+    axes.legend(fontsize=8, loc="outside lower centre")
 
     finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)
     return output_path
