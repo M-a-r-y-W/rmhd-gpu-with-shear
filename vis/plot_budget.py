@@ -119,7 +119,7 @@ def main(argv: list[str] | None = None) -> Path:
 
     axes[0].plot(time, columns[args.quantity], lw=2, color="black", label=args.quantity)
     axes[0].set_ylabel("Total Energy Density")
-    axes[0].set_title(f"{args.quantity} and Energy Budget Comparison")
+    axes[0].set_title("Total Energy Density and Energy Budget Comparison")
     axes[0].grid(True, alpha=0.3)
     axes[0].legend(fontsize=8)
 
@@ -158,7 +158,7 @@ def main(argv: list[str] | None = None) -> Path:
     )
     axes[1].axhline(0.0, color="0.4", lw=1.0, alpha=0.6)
     axes[1].set_xlabel(r"Time / $\tau_A$")
-    axes[1].set_ylabel(r"Energy Rate / d$_t Q$")
+    axes[1].set_ylabel(r"Energy Density Rate / d$_t Q$")
     axes[1].grid(True, alpha=0.3)
     axes[1].legend(fontsize=8)
 

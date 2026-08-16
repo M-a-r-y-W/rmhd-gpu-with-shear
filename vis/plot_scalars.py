@@ -108,7 +108,7 @@ def main(argv: list[str] | None = None) -> Path:
 
     ax.set_xlabel(r"Time / $\tau_A$")
     ax.set_ylabel("Energy Density")
-    ax.set_title(args.title)
+    ax.set_title("Scalar Diagnostics")
     if args.log:
         ax.set_yscale("log")
     ax.grid(True, alpha=0.3)
