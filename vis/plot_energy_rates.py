@@ -115,7 +115,7 @@ def main(argv: list[str] | None = None) -> Path:
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    fig, axes = plt.subplot_mosaic(['top', 'top'])
+    fig, axes = plt.subplots()
 
     axes.set_title("Total Energy Density and Energy Budget Comparison")
 
@@ -160,9 +160,6 @@ def main(argv: list[str] | None = None) -> Path:
 
     finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)
     return output_path
-
-
-
 
 
 
