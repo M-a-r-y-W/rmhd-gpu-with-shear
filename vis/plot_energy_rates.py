@@ -109,7 +109,7 @@ def main(argv: list[str] | None = None) -> Path:
     rhs_sum = _sum_rhs_terms(columns, rhs_term_names, time=time)
     residual = measured - rhs_sum
     output_path = (
-        csv_path.with_name(f"{args.quantity}_budget.png")
+        csv_path.with_name("energy_rates.png")
         if args.output is None
         else Path(args.output).expanduser().resolve()
     )
@@ -156,7 +156,7 @@ def main(argv: list[str] | None = None) -> Path:
     axes.set_xlabel(r"Time / $\tau_A$")
     axes.set_ylabel(r"Energy Density Rate / d$_t Q$")
     axes.grid(True, alpha=0.3)
-    axes.legend(fontsize=8)
+    axes.legend(fontsize=8, loc="best")
 
     finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)
     return output_path
