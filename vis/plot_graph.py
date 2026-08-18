@@ -1,20 +1,4 @@
-"""Plot a conserved-quantity budget from `scalar_diagnostics.csv`.
-
-The saved RHS terms use the sign convention
-
-`d_t Q = Q_rhs_total = sum(individual signed RHS terms)`.
-
-For the current total-energy budget this means, for example,
-
-- `total_energy_rhs_dissipation < 0` when dissipation removes energy
-- `total_energy_rhs_forcing > 0` on average when forcing injects energy
-
-The bottom panel also shows the closure residual
-
-`measured d_t Q - sum(individual saved RHS terms)`
-
-which should remain near zero when the saved budget terms explain the measured
-evolution well.
+"""Plots the rhs_shear energy rate against the dissipation rate and determines the steady state dissipation rate.
 """
 
 from __future__ import annotations
@@ -49,24 +33,6 @@ def _read_scalar_csv(path: Path) -> tuple[list[str], dict[str, np.ndarray]]:
     return list(reader.fieldnames), {name: np.asarray(values, dtype=np.float64) for name, values in columns.items()}
 
 
-def _backward_difference(time: np.ndarray, values: np.ndarray) -> np.ndarray:
-    derivative = np.full_like(values, np.nan, dtype=np.float64)
-    if len(values) < 2:
-        return derivative
-    dt = np.diff(time)
-    valid = dt > 0.0
-    derivative[1:][valid] = np.diff(values)[valid] / dt[valid]
-    return derivative
-
-
-def _sum_rhs_terms(columns: dict[str, np.ndarray], rhs_term_names: list[str], *, time: np.ndarray) -> np.ndarray:
-    """Return the pointwise sum of the individual saved RHS-term columns."""
-
-    if not rhs_term_names:
-        return np.zeros_like(time, dtype=np.float64)
-    return np.sum([columns[name] for name in rhs_term_names], axis=0, dtype=np.float64)
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("csv_path", help="Path to scalar_diagnostics.csv.")
@@ -83,6 +49,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     return parser
 
+def rolling_cv(x:np.array, window:int, cv_threshold:float, consecutive:int)-> int|None:
+    """ Computes the rolling coefficient of variation (CV) of the energies over a set window of timesteps. 
+    Once the CV drops under a set threshold for a set number of consecutive windows, the function returns the first index in the consecutive range where the CV dropped below the threshold.
+    If the CV never drops below the threshold, the output is None.
+    """
+    cv= np.full(len(x), np.nan) # computing indexes that don't exist leaves NaN so fine
+    for i in range(window,len(x)):
+        window_slice= x[i-window:i]
+        mean= float(np.mean(window_slice))
+        std= float(np.std(window_slice))
+        if mean != 0:
+          cv[i]= abs(std/mean)
+        else: cv[i]= np.inf
+    below =cv < cv_threshold
+    for i in range(window,len(x)-consecutive):
+        if np.all(below[i:i+consecutive]):
+           return i
+    return None
+
 
 def main(argv: list[str] | None = None) -> Path:
     args = build_parser().parse_args(argv)
@@ -95,73 +80,55 @@ def main(argv: list[str] | None = None) -> Path:
     if args.quantity not in columns:
         raise SystemExit(f"Quantity {args.quantity!r} is not present in {csv_path}.")
 
-    rhs_total_name = f"{args.quantity}_rhs_total"
-    if rhs_total_name not in columns:
-        raise SystemExit(f"Budget total column {rhs_total_name!r} is not present in {csv_path}.")
-
     rhs_term_names = sorted(
         name
         for name in fieldnames
-        if name.startswith(f"{args.quantity}_rhs_") and name != rhs_total_name
+        if name == f"{args.quantity}_rhs_dissipation" 
     )
 
-    measured = _backward_difference(time, columns[args.quantity])
-    rhs_sum = _sum_rhs_terms(columns, rhs_term_names, time=time)
-    residual = measured - rhs_sum
+    steady_state_rate= np.full(len(rhs_term_names), np.nan)
+    for Index, E_names in enumerate(rhs_term_names):
+        idx= rolling_cv(columns[E_names], 30, 0.05, 10)
+        if idx == None:
+           print(f"No steady state detected for {E_names}")
+           steady_state_rate[Index]= None
+           continue
+        Av_values= columns[E_names][idx:]
+        steady_state_rate[Index]= np.mean(Av_values) 
+
+
     output_path = (
-        csv_path.with_name("energy_rates.png")
+        csv_path.with_name("Graph.png")
         if args.output is None
         else Path(args.output).expanduser().resolve()
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    colours = ["red", "blue"]
     fig, axes = plt.subplots()
-
-    axes.set_title("Total Energy Density and Energy Budget Comparison")
-
-    axes.plot(
-        time,
-        measured,
-        lw=1.8,
-        ls="--",
-        color="0.35",
-        label=rf"measured d$_t$ {args.quantity}",
-    )
-    axes.plot(
-        time,
-        columns[rhs_total_name],
-        lw=2.0,
-        color="0.45",
-        ls="-",
-        label=f"saved {rhs_total_name}",
-    )
-    term_linestyles = ["--", ":", "-."]
     for index, term_name in enumerate(rhs_term_names):
         axes.plot(
             time,
             columns[term_name],
             lw=1.8,
-            ls=term_linestyles[index % len(term_linestyles)],
+            ls="-",
             label=term_name,
+            color=colours[index % len(colours)],
         )
-    axes.plot(
-        time,
-        residual,
-        lw=3.0,
-        ls="-",
-        color="black",
-        label=rf"closure residual: measured d$_t$ {args.quantity} - sum(saved RHS terms)",
-    )
+    for idex, term_names in enumerate(rhs_term_names):
+        if not np.isnan(steady_state_rate[idex]):
+           axes.axhline(steady_state_rate[idex],label= f"Steady state rate for {term_names} ={steady_state_rate[idex]:.3f}", color= "0.4", lw=1.5, ls="--")
+        
     axes.axhline(0.0, color="0.4", lw=1.0, alpha=0.6)
+    axes.axhline(-2.48, color="black", lw=1.0, alpha=0.6, ls="--", label="Heating rate from estimate= -2.48")
     axes.set_xlabel(r"Time / $\tau_A$")
-    axes.set_ylabel(r"Energy Density Rate / d$_t Q$")
+    axes.set_title("Comparing Energy Dissipation and Shear Heating Rates")
+    axes.set_ylabel(r"Energy Density Rates /d$_t Q$")
     axes.grid(True, alpha=0.3)
-    axes.legend(fontsize=8, loc="upper right", bbox_to_anchor=(0.5, -0.15), ncol=2)
-    plt.tight_layout()
+    axes.legend(fontsize=8)
 
     finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)
     return output_path
-
 
 
 if __name__ == "__main__":
