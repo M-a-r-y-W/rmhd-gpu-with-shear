@@ -120,7 +120,7 @@ def main(argv: list[str] | None = None) -> Path:
            axes.axhline(steady_state_rate[idex],label= f"Steady state rate for {term_names} ={steady_state_rate[idex]:.3f}", color= "0.4", lw=1.5, ls="--")
         
     axes.axhline(0.0, color="0.4", lw=1.0, alpha=0.6)
-    axes.axhline(-2.48, color="black", lw=1.0, alpha=0.6, ls="--", label="Heating rate from estimate= -2.48")
+    axes.axhline(-2.48, color="blue", lw=1.6, ls="--", label="Heating rate from estimate= -2.48")
     axes.set_xlabel(r"Time / $\tau_A$")
     axes.set_title("Comparing Energy Dissipation and Shear Heating Rates")
     axes.set_ylabel(r"Energy Density Rates /d$_t Q$")
