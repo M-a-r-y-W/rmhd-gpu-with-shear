@@ -255,8 +255,8 @@ def main(argv: list[str] | None = None) -> list[Path]:
             ax.plot(z, theoretical_sol, label="Theoretical Solution", color="red", ls="--")
             ax.set_xlabel("z")
             ax.set_ylabel("Amplitude")
-            ax.set_ylim(-3.5, 3.5)
-            ax.set_title(f"Comparison of Numerical and Theoretical Linearised Slow Waves, t={time_value:.3f}")
+            ax.set_ylim(-3.5, 3.5) # replace with max_z if you want dynamic scaling
+            ax.set_title(f"Comparison of Numerical and Theoretical Linearised Slow Waves, t={time_value:.1f}")
             ax.legend()
             ax.grid(True, which="both", ls="--", lw=0.4)
            
