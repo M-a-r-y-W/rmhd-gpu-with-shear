@@ -197,7 +197,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
     
     max_z=max_values[max_index]
         
-    max_z=round(0.2+ round(max_z,1))
+    max_z=round(0.5+ round(max_z,1))
 
     for snapshot_path in snapshot_files:
         with h5py.File(snapshot_path, "r") as handle:
