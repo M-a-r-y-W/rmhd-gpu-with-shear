@@ -197,7 +197,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
     
     max_z=max_values[max_index]
         
-    max_z=round(0.5+ round(max_z,1))
+    max_z=round(0.2+ round(max_z,1))
 
     for snapshot_path in snapshot_files:
         with h5py.File(snapshot_path, "r") as handle:
@@ -255,7 +255,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
             ax.plot(z, theoretical_sol, label="Theoretical Solution", color="red", ls="--")
             ax.set_xlabel("z")
             ax.set_ylabel("Amplitude")
-            ax.set_ylim(-max_z, max_z)
+            ax.set_ylim(-3.5, 3.5)
             ax.set_title(f"Comparison of Numerical and Theoretical Linearised Slow Waves, t={time_value:.3f}")
             ax.legend()
             ax.grid(True, which="both", ls="--", lw=0.4)
