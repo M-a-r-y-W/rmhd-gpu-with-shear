@@ -213,7 +213,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
     fig,ax= plt.subplots()
 
     ax.plot(time, num_sol, label="Numerical Solution", color="black", ls="-")
-    ax.plot(time, theo_sol, label="Theoretical Solution", color="purple", ls="--")
+    ax.plot(time, theo_sol, label="Theoretical Solution", color="red", ls="--")
     ax.set_xlabel(r"Time / $\tau_A$")
     ax.set_ylabel("Amplitude")
     ax.set_title("Comparison of Numerical and Theoretical Linearised Slow Waves over Time")

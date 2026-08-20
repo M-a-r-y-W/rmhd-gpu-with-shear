@@ -252,7 +252,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
             fig,ax= plt.subplots()
 
             ax.plot(z, numerical_sol, label="Numerical Solution", color="black", ls="-")
-            ax.plot(z, theoretical_sol, label="Theoretical Solution", color="purple", ls="--")
+            ax.plot(z, theoretical_sol, label="Theoretical Solution", color="red", ls="--")
             ax.set_xlabel("z")
             ax.set_ylabel("Amplitude")
             ax.set_ylim(-max_z, max_z)
