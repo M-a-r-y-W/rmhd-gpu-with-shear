@@ -74,7 +74,7 @@ def main(argv: list[str] | None = None) -> Path:
 
     fig, ax = plt.subplots(figsize=(8, 4.8), constrained_layout=True)
     
-    ax.errorbar(alpha, ratio, yerr=std, label= "Numerical")
+    ax.errorbar(alpha, ratio, yerr=std, fmt='o', label= "Numerical")
     ax.plot(theory_alpha, theory_alpha**2, lw=2, ls= "--", color= "black", label="Theoretical")
     
     ax.set_xlabel(r"$\alpha$")
