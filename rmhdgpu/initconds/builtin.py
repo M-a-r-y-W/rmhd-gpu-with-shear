@@ -434,7 +434,7 @@ def _normalize_random_spectrum_one_wave_parameters(parameters: dict[str, Any]) -
     return normalized
 
 def _normalize_zplus_snapshot_from_file_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
-    allowed= {"snapshot_path", "field_scale"}
+    allowed= {"snapshot_path", "field_scale", "exclude_kz0"}
     _reject_unknown_parameters("zplus_snapshot_from_file", parameters, allowed)
     if "snapshot_path" not in parameters:
         raise ValueError("snapshot path is required")
@@ -443,9 +443,11 @@ def _normalize_zplus_snapshot_from_file_parameters(parameters: dict[str, Any]) -
         raise ValueError(f"field_scale must be positive; got {field_scale!r}.")
     if not isinstance(parameters["snapshot_path"],str):
         raise ValueError("snapshot path needs to be a string")
+    exclude_kz0= bool(parameters.get("exclude_kz0", True))
     return {
         "snapshot_path": parameters["snapshot_path"],
-        "field_scale": field_scale
+        "field_scale": field_scale,
+        "exclude_kz0": exclude_kz0
     }
 
 def _grid_check_with_snapshot(grid: Any, attrs)-> None:
@@ -460,6 +462,9 @@ def _grid_check_with_snapshot(grid: Any, attrs)-> None:
         snapshot_value= float(attrs[name])
         if not math.isclose(grid_value, snapshot_value, rel_tol=1e-9):
             raise ValueError(f"Snapshot value grid volume {name!r}={snapshot_value!r} does not match grid volume for new simulation {name!r}={grid_value!r}") 
+
+    if np.dtype(attrs["real_dtype"])!= grid.real_dtype:
+        raise ValueError("The grid (dtype) of the snapshot file doesn't match the grid of the new simulation.")
     return
 
 def _rescale_state_to_total_energy(
@@ -795,12 +800,13 @@ def zplus_snapshot_from_file(
     with h5py.File(path, "r") as handle:
        _grid_check_with_snapshot(grid,handle["metadata"].attrs)
        if "zplus" not in handle["output"]:
-          raise ValueError("No zplus fields were computed in the fullfield")
+          raise ValueError("No zplus fields were computed in the fullfield.")
        zplus_field=handle["output"]["zplus"][...]
     zplus_field = backend.asarray(zplus_field, dtype=grid.real_dtype)
     zplus_hat=_masked_r2c(zplus_field,fft=fft,dealias_mask=dealias_mask)
-    kpar_nonzero = grid.kz != 0
-    zplus_hat *= kpar_nonzero
+    if normalized["exclude_kz0"]:
+       kpar_nonzero = grid.kz != 0 
+       zplus_hat *= kpar_nonzero
     zplus_hat *=field_scale
     state = State(grid, backend, field_names=list(field_names))
     state["psi"][...]= 0.5*zplus_hat
