@@ -434,13 +434,19 @@ def _normalize_random_spectrum_one_wave_parameters(parameters: dict[str, Any]) -
     return normalized
 
 def _normalize_zplus_snapshot_from_file_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
-    allowed= {"snapshot_path"}
+    allowed= {"snapshot_path", "field_scale"}
     _reject_unknown_parameters("zplus_snapshot_from_file", parameters, allowed)
     if "snapshot_path" not in parameters:
         raise ValueError("snapshot path is required")
+    field_scale= float(parameters.get("field_scale", 1.0))
+    if field_scale <= 0.0:
+        raise ValueError(f"field_scale must be positive; got {field_scale!r}.")
     if not isinstance(parameters["snapshot_path"],str):
         raise ValueError("snapshot path needs to be a string")
-    return {"snapshot_path": parameters["snapshot_path"]}
+    return {
+        "snapshot_path": parameters["snapshot_path"],
+        "field_scale": field_scale
+    }
 
 def _grid_check_with_snapshot(grid: Any, attrs)-> None:
     for name in ("Nx", "Ny", "Nz"):
@@ -782,6 +788,7 @@ def zplus_snapshot_from_file(
     """
     normalized = _normalize_zplus_snapshot_from_file_parameters(_as_parameter_dict(parameters))
     path= normalized["snapshot_path"]
+    field_scale= normalized["field_scale"]
     if not path.endswith(".h5"):
         raise ValueError("Run snapshot file must end with .h5 suffix.")
     _require_fields("zplus_snapshot_from_file", field_names, ("psi", "omega"))
@@ -792,6 +799,9 @@ def zplus_snapshot_from_file(
        zplus_field=handle["output"]["zplus"][...]
     zplus_field = backend.asarray(zplus_field, dtype=grid.real_dtype)
     zplus_hat=_masked_r2c(zplus_field,fft=fft,dealias_mask=dealias_mask)
+    kpar_nonzero = grid.kz != 0
+    zplus_hat *= kpar_nonzero
+    zplus_hat *=field_scale
     state = State(grid, backend, field_names=list(field_names))
     state["psi"][...]= 0.5*zplus_hat
     state["omega"][...]= lap_perp(0.5*zplus_hat,grid)
