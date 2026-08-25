@@ -90,9 +90,9 @@ def main(argv: list[str] | None = None) -> Path:
     time = columns[time_key]
 
     config = _read_resolved_config(
-            csv_path.parent / "resolved_config.toml"
+            csv_path / "resolved_config.toml"
             if csv_path.is_dir()
-            else csv_path.parent.parent / "resolved_config.toml"
+            else csv_path.parent / "resolved_config.toml"
         )
 
     physics = config["physics"]
@@ -116,7 +116,7 @@ def main(argv: list[str] | None = None) -> Path:
         raise SystemExit(f"Unknown scalar columns requested: {unknown}.")
 
     output_path = (
-        csv_path.with_name("scalar_diagnostics.png")
+        csv_path.with_name("scalar_diagnostics_beta.png")
         if args.output is None
         else Path(args.output).expanduser().resolve()
     )
