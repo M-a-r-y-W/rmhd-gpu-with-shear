@@ -87,7 +87,7 @@ def main(argv: list[str] | None = None) -> Path:
             Path.cwd() / "Beta_comparison.png" if args.output is None
             else Path(args.output).expanduser().resolve()
         )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True) # need more fiddling with output path if have time so stop sending it to rmhdgpu-with-shear directory
 
     finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)
     return output_path
