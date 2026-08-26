@@ -19,9 +19,10 @@ from typing import Any
 
 import numpy as np
 
+from rmhdgpu.diagnostics.alfvenic import elsasser_energies
 from rmhdgpu.diagnostics.budget import flatten_conserved_quantity_budgets
 from rmhdgpu.diagnostics.scalar import STANDARD_ENERGY_SCALAR_DIAGNOSTIC_INFO
-from rmhdgpu.diagnostics.spectra import perpendicular_shell_spectrum, parallel_shell_spectrum
+from rmhdgpu.diagnostics.spectra import perpendicular_shell_spectrum, parallel_shell_spectrum, elsasser_perpendicular_spectra
 from rmhdgpu.fourier_diagnostics import modal_average
 from rmhdgpu.operators import inv_lap_perp, lap_perp, poisson_bracket
 from rmhdgpu.state import State
@@ -37,6 +38,10 @@ SCALAR_DIAGNOSTIC_INFO = {
     "z_plus_energy": "Total two_field Alfvenic energy propagating outwards: 0.25 <|grad phi + grad psi|^2>",
     "z_minus_energy": "Total two_field Alfvenic energy propagating inwards: 0.25 <|grad phi - grad psi|^2>", 
     "normalised_cross_helicity": "Normalised cross helicity: (z_plus_energy - z_minus_energy) / alfvenic_energy",
+    "elsasser_energy_plus": "E+ = 0.5 <|grad(phi - psi)|^2>.",
+    "elsasser_energy_minus": "E- = 0.5 <|grad(phi + psi)|^2>.",
+    "elsasser_energy_ratio": "Elsasser energy ratio E+ / E-.",
+    "normalized_cross_helicity": "(E- - E+) / (E+ + E-) for the package potential convention.",
 }
 
 _ORIGINAL_POISSON_BRACKET = poisson_bracket
@@ -476,6 +481,7 @@ def compute_equation_scalar_diagnostics(
         "z_minus_energy": z_minus_energy(state, grid, backend, params), 
         "normalised_cross_helicity": normalised_cross_helicity(state, grid, backend, params),
     }
+    diagnostics.update(elsasser_energies(state, grid, backend))
 
     budgets = compute_conserved_quantity_budgets(
         state,

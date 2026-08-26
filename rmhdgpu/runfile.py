@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import warnings
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -57,7 +58,18 @@ _SECTION_KEYS = {
     "backend": {"backend", "fft_workers", "real_dtype", "complex_dtype"},
     "runtime": {"runtime_check_every", "progress_output_every", "fail_on_nonfinite", "dealias", "dealias_mode"},
     "physics": {"vA", "cs2_over_vA2", "N2", "Ku"},
-    "forcing": {"use_forcing", "n_min_force", "n_max_force", "alpha_force", "forcing_seed", "force_amplitudes"},
+    "forcing": {
+        "use_forcing",
+        "forcing_mode",
+        "n_min_force",
+        "n_max_force",
+        "alpha_force",
+        "forcing_seed",
+        "epsilon_plus",
+        "epsilon_minus",
+        "field_energy_injection_rates",
+        "force_amplitudes",
+    },
     "dissipation_stop":{"alfvenic_stop_time", "slow_wave_stop_time"}
 }
 _AUTO_DISSIPATION_KEYS = {
@@ -81,7 +93,16 @@ _SECTION_TO_CONFIG_KEYS = {
     "backend": {"backend", "fft_workers", "real_dtype", "complex_dtype"},
     "runtime": {"runtime_check_every", "progress_output_every", "fail_on_nonfinite", "dealias", "dealias_mode"},
     "physics": {"vA", "cs2_over_vA2", "N2", "Ku"},
-    "forcing": {"use_forcing", "n_min_force", "n_max_force", "alpha_force", "forcing_seed"},
+    "forcing": {
+        "use_forcing",
+        "forcing_mode",
+        "n_min_force",
+        "n_max_force",
+        "alpha_force",
+        "forcing_seed",
+        "epsilon_plus",
+        "epsilon_minus",
+    },
     "dissipation_stop":{"alfvenic_stop_time", "slow_wave_stop_time"}
 }
 
@@ -212,9 +233,15 @@ def load_run_file(path: str | Path) -> dict[str, Any]:
         raise ValueError("initial_condition must be a TOML table.")
 
     forcing = _require_table(data, "forcing")
-    force_amplitudes = forcing.get("force_amplitudes", {})
-    if force_amplitudes is not None and not isinstance(force_amplitudes, dict):
-        raise ValueError("forcing.force_amplitudes must be a TOML table.")
+    for table_name in ("field_energy_injection_rates", "force_amplitudes"):
+        table = forcing.get(table_name, {})
+        if table is not None and not isinstance(table, dict):
+            raise ValueError(f"forcing.{table_name} must be a TOML table.")
+    if "field_energy_injection_rates" in forcing and "force_amplitudes" in forcing:
+        raise ValueError(
+            "Specify only forcing.field_energy_injection_rates. The legacy "
+            "forcing.force_amplitudes table is accepted only as a deprecated alias."
+        )
 
     dissipation = data.get("dissipation", {})
     if dissipation is not None and not isinstance(dissipation, dict):
@@ -312,19 +339,17 @@ def cli_overrides_from_args(args: argparse.Namespace) -> dict[str, Any]:
     
     forcing_map = {
         "use_forcing": "use_forcing",
+        "forcing_mode": "forcing_mode",
         "forcing_seed": "forcing_seed",
         "n_min_force": "n_min_force",
         "n_max_force": "n_max_force",
         "alpha_force": "alpha_force",
+        "epsilon_plus": "epsilon_plus",
+        "epsilon_minus": "epsilon_minus",
     }
     for cli_key, config_key in forcing_map.items():
         if cli_key in values:
             _set_section("forcing", config_key, values[cli_key])
-    if "force_sigma" in values:
-        overrides.setdefault("forcing", {}).setdefault("force_amplitudes", {})
-        overrides["forcing"]["force_amplitudes"]["psi"] = values["force_sigma"]
-        overrides["forcing"]["force_amplitudes"]["omega"] = values["force_sigma"]
-
     initial_condition_map = {
         "initial_condition": "type",
     }
@@ -368,9 +393,19 @@ def _document_to_config_values(document: dict[str, Any]) -> dict[str, Any]:
         _apply_section_to_config_dict(config_values, section_name, section_data)
 
     forcing = _require_table(document, "forcing")
-    force_amplitudes = forcing.get("force_amplitudes")
-    if force_amplitudes is not None:
-        config_values["force_amplitudes"].update(deepcopy(force_amplitudes))
+    field_rates = forcing.get("field_energy_injection_rates")
+    legacy_rates = forcing.get("force_amplitudes")
+    if legacy_rates is not None:
+        warnings.warn(
+            "[forcing.force_amplitudes] is deprecated. Values are now interpreted "
+            "as energy injection rates; rename the table to "
+            "[forcing.field_energy_injection_rates].",
+            FutureWarning,
+            stacklevel=3,
+        )
+        field_rates = legacy_rates
+    if field_rates is not None:
+        config_values["field_energy_injection_rates"].update(deepcopy(field_rates))
 
     dissipation = document.get("dissipation")
     if dissipation is not None:
@@ -440,11 +475,14 @@ def _resolved_document(
             "N2": config.N2,
             "Ku": config.Ku,
             "use_forcing": config.use_forcing,
+            "forcing_mode": config.forcing_mode,
             "n_min_force": config.n_min_force,
             "n_max_force": config.n_max_force,
             "alpha_force": config.alpha_force,
             "forcing_seed": config.forcing_seed,
-            "force_amplitudes": deepcopy(config.force_amplitudes),
+            "epsilon_plus": config.epsilon_plus,
+            "epsilon_minus": config.epsilon_minus,
+            "field_energy_injection_rates": deepcopy(config.field_energy_injection_rates),
             "alfvenic_stop_time": config.alfvenic_stop_time,
             "slow_wave_stop_time": config.slow_wave_stop_time,
             "dissipation": deepcopy(config.dissipation),
@@ -504,11 +542,14 @@ def _resolved_document(
         },
         "forcing": {
             "use_forcing": config_values["use_forcing"],
+            "forcing_mode": config_values["forcing_mode"],
             "n_min_force": config_values["n_min_force"],
             "n_max_force": config_values["n_max_force"],
             "alpha_force": config_values["alpha_force"],
             "forcing_seed": config_values["forcing_seed"],
-            "force_amplitudes": config_values["force_amplitudes"],
+            "epsilon_plus": config_values["epsilon_plus"],
+            "epsilon_minus": config_values["epsilon_minus"],
+            "field_energy_injection_rates": config_values["field_energy_injection_rates"],
         },
         "dissipation": {
             **config_values["auto_dissipation"],

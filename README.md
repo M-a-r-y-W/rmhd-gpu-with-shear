@@ -85,7 +85,7 @@ Available equation sets are:
 - `s09`: homogeneous five-field system with fields `psi`, `omega`, `upar`, `dbpar`, `s`
 - `low_beta_stratified`: three-field system with fields `psi`, `omega`, `a`
 
-The selected equation set determines the evolved field list, so manual dissipation and forcing-amplitude blocks must use the matching field names.
+The selected equation set determines the evolved field list, so manual dissipation and per-field forcing-rate settings must use the matching field names.
 
 Use `alfvenic` when you only want the Alfvénic turbulence dynamics and do not
 need the slow/entropy sector from `s09`; it reduces memory use and the amount
@@ -184,11 +184,13 @@ fft_workers = 8
 
 [forcing]
 use_forcing = true
+forcing_mode = "elsasser"
 forcing_seed = 1234
+epsilon_plus = 0.8
+epsilon_minus = 0.2
 
-[forcing.force_amplitudes]
-psi = 0.05
-omega = 0.05
+[forcing.field_energy_injection_rates]
+upar = 0.01
 
 [initial_condition]
 type = "zero"
@@ -210,10 +212,117 @@ Supported sections are:
 - `[backend]`: `backend`, `fft_workers`, `real_dtype`, `complex_dtype`
 - `[runtime]`: `runtime_check_every`, `progress_output_every`, `fail_on_nonfinite`, `dealias`, `dealias_mode`
 - `[physics]`: `vA`, `cs2_over_vA2`, `N2`
-- `[forcing]` and `[forcing.force_amplitudes]`
+- `[forcing]` and `[forcing.field_energy_injection_rates]`
 - `[dissipation]` for optional auto-dissipation control
 - `[dissipation.<field>]` for manual per-field dissipation
 - `[initial_condition]`
+
+### Forcing
+
+The forcing is additive Gaussian noise refreshed every timestep. It is built
+from a real, unit-variance Gaussian field, filtered to the integer-mode shell
+`n_min_force <= sqrt(nx^2 + ny^2 + nz^2) <= n_max_force`, and shaped in
+Fourier amplitude as `n^(-alpha_force)`. Here `alpha_force` controls only the
+shape within the forcing band; it is unrelated to the imbalance-response
+exponent discussed below.
+
+The filtered realization is **not** normalized from its measured RMS or
+energy. Instead, the code computes one fixed ensemble normalization for the
+chosen grid, forcing band, and energy definition. A fresh unnormalized
+realization is multiplied by `sqrt(dt)` on every step. Individual energy
+increments therefore fluctuate naturally, while the configured `epsilon`
+values set their ensemble means.
+
+For `forcing_mode = "field"`, each entry in
+`[forcing.field_energy_injection_rates]` applies to one evolved field. If
+`xi_i` is the filtered Gaussian for field `i` and
+
+```text
+C_i = ensemble mean of total_energy(state with only q_i = xi_i),
+```
+
+then the kick is
+
+```text
+delta q_i = sqrt(epsilon_i * dt / C_i) * xi_i.
+```
+
+Thus `mean[total_energy(delta q_i)] = epsilon_i * dt`. The normalization uses
+the selected equation module's `total_energy`, so the same input convention
+works for potentials, vorticity, and weighted compressive fields such as
+`upar`, `dbpar`, and `s`. Independently forced fields have independent random
+realizations.
+
+For `forcing_mode = "elsasser"`, the code independently forces
+
+```text
+zeta_plus  = phi - psi
+zeta_minus = phi + psi
+E_plus/minus = 0.5 * mean(|grad_perp zeta_plus/minus|^2).
+```
+
+`epsilon_plus` and `epsilon_minus` satisfy
+`mean[E_plus/minus(delta zeta_plus/minus)] = epsilon_plus/minus * dt`. The
+kicks are transformed back to `psi` and either `phi` or
+`omega = lap_perp(phi)`, so this mode can be used by any equation set with
+that Alfvénic storage convention. In the diagnostics used here,
+`E_A = 0.5 * (E_plus + E_minus)`, so the mean injection into `E_A` is
+`0.5 * (epsilon_plus + epsilon_minus)`.
+
+Balanced forcing is selected with `epsilon_plus = epsilon_minus`. For an
+injection imbalance `R_epsilon = epsilon_plus / epsilon_minus`, a useful 32^3
+starting point that gives `u_perp,rms` of order one is:
+
+```toml
+[forcing]
+use_forcing = true
+forcing_mode = "elsasser"
+n_min_force = 1.0
+n_max_force = 3.0
+alpha_force = 0.0
+epsilon_plus = 0.35
+epsilon_minus = 0.35
+forcing_seed = 1234
+
+[dissipation]
+mode = "auto"
+n_perp = 3
+n_par = 1
+nu_par = 0.0
+kd_fraction = 0.6
+update_every = 10
+smooth_factor = 0.4
+```
+
+In the 32^3 sanity run, this balanced choice gave approximately
+`u_perp,rms = 0.94` at `t = 32`. These values are practical starting points,
+not resolution-independent calibrations. To increase imbalance while keeping
+the overall fluctuation amplitude roughly comparable, the current sanity scan
+uses
+
+```text
+epsilon_sum   = 0.7 * R_epsilon^(-2/3)
+epsilon_plus  = epsilon_sum * R_epsilon / (1 + R_epsilon)
+epsilon_minus = epsilon_sum / (1 + R_epsilon).
+```
+
+Previous work suggests, and the small 32^3 scan is consistent with,
+`E_plus / E_minus ~ R_epsilon^2`. The measured imbalanced-only exponent was
+about `2.04` for `R_epsilon = 2, 4, 8`. Strongly imbalanced cases equilibrate
+more slowly, so production measurements should use longer runs, adequate
+resolution, and preferably multiple seeds. Reproduce or modify this check with:
+
+```bash
+python -m rmhdgpu.examples.sanity_imbalanced_forcing
+```
+
+Legacy warning: `[forcing.force_amplitudes]` is accepted temporarily as a
+deprecated alias, but its values are now interpreted as energy injection rates
+with the `epsilon` normalization above, not as the old raw field amplitudes.
+New input files should always use `[forcing.field_energy_injection_rates]` or
+the Elsasser `epsilon_plus` and `epsilon_minus` settings.
+
+### Dissipation
 
 For the low-beta stratified system, `N2` may be positive or negative. With the
 sign convention used here, `N2 > 0` allows unstable/decaying linear branches,
@@ -255,6 +364,8 @@ Meaning of the main settings:
 - `smooth_factor`: log-space smoothing strength; larger values react faster
 - `nu_par`: fixed common parallel coefficient used in auto mode
 - `n_perp`, `n_par`: common perpendicular and parallel hyper-orders used for every field
+
+### Initial Conditions
 
 Currently supported initial conditions are:
 

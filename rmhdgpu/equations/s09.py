@@ -34,10 +34,11 @@ from typing import Any
 import numpy as np
 
 from rmhdgpu.diagnostics.budget import flatten_conserved_quantity_budgets
+from rmhdgpu.diagnostics.alfvenic import elsasser_energies
 from rmhdgpu.diagnostics.scalar import STANDARD_ENERGY_SCALAR_DIAGNOSTIC_INFO
 from rmhdgpu.fourier_diagnostics import modal_average, modal_inner_product_average
 from rmhdgpu.operators import dy, dz, inv_lap_perp, lap_perp, poisson_bracket
-from rmhdgpu.diagnostics.spectra import perpendicular_shell_spectrum, parallel_shell_spectrum
+from rmhdgpu.diagnostics.spectra import perpendicular_shell_spectrum, elsasser_perpendicular_spectra, parallel_shell_spectrum
 from rmhdgpu.state import State
 
 
@@ -51,6 +52,10 @@ DEFAULT_INITIAL_CONDITION = "alfven_mode"
 SCALAR_DIAGNOSTIC_INFO = {
     **STANDARD_ENERGY_SCALAR_DIAGNOSTIC_INFO,
     "alfvenic_energy": "Alfvenic part of the shear energy: 0.5 <|grad phi|^2 + |grad psi|^2>.",
+    "elsasser_energy_plus": "E+ = 0.5 <|grad(phi - psi)|^2>.",
+    "elsasser_energy_minus": "E- = 0.5 <|grad(phi + psi)|^2>.",
+    "elsasser_energy_ratio": "Elsasser energy ratio E+ / E-.",
+    "normalized_cross_helicity": "(E- - E+) / (E+ + E-) for the package potential convention.",
     "upar_energy": "Unweighted kinetic parallel energy proxy: 0.5 <upar^2>.",
     "dbpar_energy": "Unweighted magnetic-compressive energy proxy: 0.5 <dbpar^2>.",
     "dbpar_energy_weighted": "Weighted magnetic-compressive energy proxy: 0.5 <alpha^(-1) dbpar^2>.",
@@ -307,8 +312,8 @@ def _energy_modal_densities(
         "b_perp": 0.5 * kperp2 * (xp.abs(state["psi"]) ** 2),
         "upar": 0.5 * (xp.abs(state["upar"]) ** 2),
         "dbpar": 0.5 * p.dbpar_energy_weight * (xp.abs(state["dbpar"]) ** 2),
-        "z_plus": 0.25 * kperp2 * (xp.abs(phi_hat + state["psi"]) ** 2),
-        "z_minus": 0.25 * kperp2 * (xp.abs(phi_hat - state["psi"]) ** 2),
+        "z_plus": 0.25 * kperp2 * xp.abs(phi_hat - state["psi"]) ** 2,
+        "z_minus": 0.25 * kperp2 * (xp.abs(phi_hat + state["psi"]) ** 2),
     }
 
 def perpendicular_energy_spectra(
@@ -531,6 +536,7 @@ def compute_equation_scalar_diagnostics(
         "dbpar_energy_weighted": dbpar * dbpar_weight,
         "total_energy_proxy": alfvenic + upar + dbpar,
     }
+    diagnostics.update(elsasser_energies(state, grid, backend))
 
     budgets = compute_conserved_quantity_budgets(
         state,

@@ -45,7 +45,7 @@ fft_workers = 4
 use_forcing = true
 forcing_seed = 7
 
-[forcing.force_amplitudes]
+[forcing.field_energy_injection_rates]
 psi = 0.05
 
 [dissipation.psi]
@@ -68,8 +68,8 @@ n_par = 1
     assert settings.config.fft_workers == 4
     assert settings.config.use_forcing is True
     assert settings.config.forcing_seed == 7
-    assert settings.config.force_amplitudes["psi"] == 0.05
-    assert settings.config.force_amplitudes["omega"] == 0.0
+    assert settings.config.field_energy_injection_rates["psi"] == 0.05
+    assert settings.config.field_energy_injection_rates["omega"] == 0.0
     assert settings.config.dissipation["psi"]["nu_perp"] == 0.005
     assert settings.config.dissipation["omega"]["nu_perp"] == 0.0
 
@@ -124,7 +124,7 @@ Nz = 8
 use_forcing = true
 forcing_seed = 22
 
-[forcing.force_amplitudes]
+[forcing.field_energy_injection_rates]
 psi = 0.02
 omega = 0.03
 
@@ -139,9 +139,57 @@ type = "zero"
 
     assert settings.config.use_forcing is True
     assert settings.config.forcing_seed == 22
-    assert settings.config.force_amplitudes["psi"] == 0.02
-    assert settings.config.force_amplitudes["omega"] == 0.03
+    assert settings.config.field_energy_injection_rates["psi"] == 0.02
+    assert settings.config.field_energy_injection_rates["omega"] == 0.03
     assert settings.initial_condition.type == "zero"
+
+
+def test_elsasser_forcing_runfile_parses(tmp_path) -> None:
+    input_file = tmp_path / "imbalanced.input"
+    input_file.write_text(
+        """
+[equations]
+type = "alfvenic"
+
+[forcing]
+use_forcing = true
+forcing_mode = "elsasser"
+epsilon_plus = 0.8
+epsilon_minus = 0.2
+forcing_seed = 91
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    settings = resolve_run_settings(runfile_path=input_file)
+
+    assert settings.config.forcing_mode == "elsasser"
+    assert settings.config.epsilon_plus == 0.8
+    assert settings.config.epsilon_minus == 0.2
+    assert settings.resolved_document["forcing"]["epsilon_plus"] == 0.8
+    assert "force_amplitudes" not in settings.resolved_document["forcing"]
+
+
+def test_legacy_force_amplitudes_warns_and_uses_epsilon_semantics(tmp_path) -> None:
+    input_file = tmp_path / "legacy_forcing.input"
+    input_file.write_text(
+        """
+[forcing]
+use_forcing = true
+
+[forcing.force_amplitudes]
+psi = 0.25
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.warns(FutureWarning, match="energy injection rates"):
+        settings = resolve_run_settings(runfile_path=input_file)
+
+    assert settings.config.field_energy_injection_rates["psi"] == 0.25
+    assert "field_energy_injection_rates" in settings.resolved_document["forcing"]
 
 
 def test_initial_condition_parameter_table_parses_and_overrides_defaults(tmp_path) -> None:

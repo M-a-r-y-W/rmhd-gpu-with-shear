@@ -149,7 +149,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--Ku", type=float, default=argparse.SUPPRESS)
 
     parser.add_argument("--use-forcing", action=argparse.BooleanOptionalAction, default=argparse.SUPPRESS)
-    parser.add_argument("--force-sigma", type=float, default=argparse.SUPPRESS)
+    parser.add_argument("--forcing-mode", choices=["field", "elsasser"], default=argparse.SUPPRESS)
+    parser.add_argument("--epsilon-plus", type=float, default=argparse.SUPPRESS)
+    parser.add_argument("--epsilon-minus", type=float, default=argparse.SUPPRESS)
     parser.add_argument("--forcing-seed", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--n-min-force", dest="n_min_force", type=float, default=argparse.SUPPRESS)
     parser.add_argument("--n-max-force", dest="n_max_force", type=float, default=argparse.SUPPRESS)
@@ -316,6 +318,17 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
                     "full_field": config.t_out_full,
                 },
                 "dissipation_mode": config.auto_dissipation.mode,
+                "forcing": {
+                    "enabled": config.use_forcing,
+                    "mode": config.forcing_mode,
+                    "epsilon_plus": config.epsilon_plus,
+                    "epsilon_minus": config.epsilon_minus,
+                    "field_energy_injection_rates": {
+                        name: epsilon
+                        for name, epsilon in config.field_energy_injection_rates.items()
+                        if epsilon != 0.0
+                    },
+                },
                 "initial_condition": settings.initial_condition.to_document(),
             },
         )
@@ -619,6 +632,7 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
                         dt,
                         workspace=workspace,
                         out=workspace.get_state_buffer("forcing_kick", stepped_state.field_names),
+                        equation_module=equation_module,
                     )
                     state = apply_forcing_kick(stepped_state, forcing_kick, inplace=True)
                     if track_budget:

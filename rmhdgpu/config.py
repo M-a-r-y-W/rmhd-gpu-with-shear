@@ -23,7 +23,7 @@ def _default_dissipation_for_fields(field_names: list[str]) -> dict[str, dict[st
     return {name: deepcopy(template) for name in field_names}
 
 
-def _default_force_amplitudes_for_fields(field_names: list[str]) -> dict[str, float]:
+def _default_field_energy_injection_rates(field_names: list[str]) -> dict[str, float]:
     return {name: 0.0 for name in field_names}
 
 
@@ -119,10 +119,10 @@ class AutoDissipationSettings:
 class Config:
     """Container for simulation-wide parameters.
 
-    This first-pass configuration is intentionally small and explicit. It
-    validates domain size, output cadence, backend choice, field names, and
-    dissipation keys. Dtypes are normalized to NumPy dtype objects so they can
-    be reused consistently by both NumPy and CuPy backends.
+    The configuration is intentionally explicit. Forcing values named
+    ``epsilon`` are mean quadratic-energy injection rates; they are not raw
+    potential or field amplitudes. Dtypes are normalized to NumPy dtype objects
+    so they can be reused consistently by NumPy and CuPy backends.
     """
 
     equation_set: str = DEFAULT_EQUATION_SET
@@ -156,10 +156,13 @@ class Config:
     N2: float = 1.0
     Ku: float = 0.0
     use_forcing: bool = False
+    forcing_mode: str = "field"
     n_min_force: float = 1.0
     n_max_force: float = 3.0
     alpha_force: float = 0.0
-    force_amplitudes: dict[str, float] | None = None
+    field_energy_injection_rates: dict[str, float] | None = None
+    epsilon_plus: float = 0.0
+    epsilon_minus: float = 0.0
     forcing_seed: int | None = None
     field_names: list[str] | None = None
     alfvenic_stop_time: float | None = None
@@ -241,6 +244,12 @@ class Config:
             raise ValueError(f"fail_on_nonfinite must be bool; got {self.fail_on_nonfinite!r}.")
         if not isinstance(self.use_forcing, bool):
             raise ValueError(f"use_forcing must be bool; got {self.use_forcing!r}.")
+        self.forcing_mode = str(self.forcing_mode)
+        if self.forcing_mode not in {"field", "elsasser"}:
+            raise ValueError(
+                "forcing_mode must be 'field' or 'elsasser'; "
+                f"got {self.forcing_mode!r}."
+            )
         if not isinstance(self.runtime_check_every, (int, np.integer)) or self.runtime_check_every <= 0:
             raise ValueError(
                 f"runtime_check_every must be a positive integer; got {self.runtime_check_every!r}."
@@ -300,29 +309,67 @@ class Config:
                 )
             self.forcing_seed = int(self.forcing_seed)
 
-        if self.force_amplitudes is None:
-            self.force_amplitudes = _default_force_amplitudes_for_fields(self.field_names)
+        if self.field_energy_injection_rates is None:
+            self.field_energy_injection_rates = _default_field_energy_injection_rates(
+                self.field_names
+            )
         else:
-            self.force_amplitudes = deepcopy(self.force_amplitudes)
+            self.field_energy_injection_rates = deepcopy(
+                self.field_energy_injection_rates
+            )
 
-        force_keys = set(self.force_amplitudes)
+        force_keys = set(self.field_energy_injection_rates)
         valid_keys = set(self.field_names)
         extra_force_keys = sorted(force_keys - valid_keys)
         if extra_force_keys:
             raise ValueError(
-                "force_amplitudes keys must be a subset of field_names; "
+                "field_energy_injection_rates keys must be a subset of field_names; "
                 f"unexpected keys: {extra_force_keys}."
             )
 
-        cleaned_force_amplitudes = _default_force_amplitudes_for_fields(self.field_names)
-        for field_name, amplitude in self.force_amplitudes.items():
-            amplitude_value = float(amplitude)
-            if amplitude_value < 0.0:
+        cleaned_injection_rates = _default_field_energy_injection_rates(self.field_names)
+        for field_name, rate in self.field_energy_injection_rates.items():
+            rate_value = float(rate)
+            if not np.isfinite(rate_value) or rate_value < 0.0:
                 raise ValueError(
-                    f"force_amplitudes[{field_name!r}] must be nonnegative; got {amplitude_value!r}."
+                    "field_energy_injection_rates"
+                    f"[{field_name!r}] must be finite and nonnegative; got {rate_value!r}."
                 )
-            cleaned_force_amplitudes[field_name] = amplitude_value
-        self.force_amplitudes = cleaned_force_amplitudes
+            cleaned_injection_rates[field_name] = rate_value
+        self.field_energy_injection_rates = cleaned_injection_rates
+
+        self.epsilon_plus = float(self.epsilon_plus)
+        self.epsilon_minus = float(self.epsilon_minus)
+        for name in ("epsilon_plus", "epsilon_minus"):
+            value = getattr(self, name)
+            if not np.isfinite(value) or value < 0.0:
+                raise ValueError(f"{name} must be finite and nonnegative; got {value!r}.")
+
+        if self.forcing_mode == "field" and (
+            self.epsilon_plus != 0.0 or self.epsilon_minus != 0.0
+        ):
+            raise ValueError(
+                "epsilon_plus and epsilon_minus must be zero when forcing_mode='field'."
+            )
+
+        if self.forcing_mode == "elsasser":
+            if "psi" not in valid_keys or not ({"phi", "omega"} & valid_keys):
+                raise ValueError(
+                    "forcing_mode='elsasser' requires a 'psi' field and either a 'phi' "
+                    "or 'omega' field."
+                )
+            alfvenic_storage = {"psi", "phi", "omega"} & valid_keys
+            duplicate_rates = {
+                name: self.field_energy_injection_rates[name]
+                for name in sorted(alfvenic_storage)
+                if self.field_energy_injection_rates[name] != 0.0
+            }
+            if duplicate_rates:
+                raise ValueError(
+                    "Alfvenic fields cannot also have field_energy_injection_rates when "
+                    "forcing_mode='elsasser'; use epsilon_plus and epsilon_minus instead. "
+                    f"Nonzero conflicting rates: {duplicate_rates}."
+                )
 
         if self.alfvenic_stop_time is not None:
             self.alfvenic_stop_time = float(self.alfvenic_stop_time)
