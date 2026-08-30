@@ -52,8 +52,8 @@ DEFAULT_INITIAL_CONDITION = "alfven_mode"
 SCALAR_DIAGNOSTIC_INFO = {
     **STANDARD_ENERGY_SCALAR_DIAGNOSTIC_INFO,
     "alfvenic_energy": "Alfvenic part of the shear energy: 0.5 <|grad phi|^2 + |grad psi|^2>.",
-    "elsasser_energy_plus": "E+ = 0.5 <|grad(phi - psi)|^2>.",
-    "elsasser_energy_minus": "E- = 0.5 <|grad(phi + psi)|^2>.",
+    "elsasser_energy_plus": "E+ = 0.25 <|grad(phi - psi)|^2>.",
+    "elsasser_energy_minus": "E- = 0.25 <|grad(phi + psi)|^2>.",
     "elsasser_energy_ratio": "Elsasser energy ratio E+ / E-.",
     "normalized_cross_helicity": "(E- - E+) / (E+ + E-) for the package potential convention.",
     "upar_energy": "Unweighted kinetic parallel energy proxy: 0.5 <upar^2>.",
@@ -312,7 +312,7 @@ def _energy_modal_densities(
         "b_perp": 0.5 * kperp2 * (xp.abs(state["psi"]) ** 2),
         "upar": 0.5 * (xp.abs(state["upar"]) ** 2),
         "dbpar": 0.5 * p.dbpar_energy_weight * (xp.abs(state["dbpar"]) ** 2),
-        "z_plus": 0.25 * kperp2 * xp.abs(phi_hat - state["psi"]) ** 2,
+        "z_plus": 0.25 * kperp2 * (xp.abs(phi_hat - state["psi"]) ** 2),
         "z_minus": 0.25 * kperp2 * (xp.abs(phi_hat + state["psi"]) ** 2),
     }
 
@@ -477,7 +477,6 @@ def compute_conserved_quantity_budgets(
     stored as `shear` with sign convention
 
     `d_t E = shear + dissipation + forcing + ...`."""
-#Not sure whether to make changes here, compare with stratification
     rhs_terms: dict[str, float] = {
         "shear": total_energy_shear_rhs(state, grid, backend, params),
     }

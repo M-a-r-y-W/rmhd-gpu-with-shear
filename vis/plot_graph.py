@@ -1,4 +1,4 @@
-"""Plots the rhs_shear energy rate against the dissipation rate and determines the steady state dissipation rate.
+"""Plots the rhs_shear energy rate against the dissipation rate and determines the steady state dissipation rate. ONLY DISSIPATION RATE USED
 """
 
 from __future__ import annotations
