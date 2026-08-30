@@ -570,7 +570,8 @@ def run_simulation(settings: RunSettings) -> dict[str, Any]:
                     backend=backend,
                     field_names=config.field_names,
                     extra_fields_hat={
-                        "zplus": phi_hat - state["psi"]
+                        "zplus": phi_hat - state["psi"],
+                        "zminus": phi_hat + state["psi"],
                     }
                 )
                 logger.event(

@@ -748,7 +748,7 @@ def random_spectrum_one_wave(
             alpha_prl_force=0.5 * normalized["alpha_prl"],
             rng=rng,
         )
-    state["psi"][...] = psi_hat
+    state["psi"][...] = -psi_hat
 
     state["omega"][...] = lap_perp(psi_hat, grid)
 
@@ -809,7 +809,7 @@ def zplus_snapshot_from_file(
        zplus_hat *= kpar_nonzero
     zplus_hat *=field_scale
     state = State(grid, backend, field_names=list(field_names))
-    state["psi"][...]= 0.5*zplus_hat
+    state["psi"][...]= -0.5*zplus_hat
     state["omega"][...]= lap_perp(0.5*zplus_hat,grid)
 
     return state
