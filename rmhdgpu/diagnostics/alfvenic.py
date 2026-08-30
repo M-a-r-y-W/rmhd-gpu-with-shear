@@ -173,9 +173,9 @@ def elsasser_energies(
 
     The reported energies are
 
-    ``E_plus/minus = 0.5 <|grad_perp zeta_plus/minus|^2>``.
+    ``E_plus/minus = 0.25 <|grad_perp zeta_plus/minus|^2>``.
 
-    Therefore the package Alfvénic energy is ``0.5 * (E_plus + E_minus)`` and
+    Therefore the package Alfvénic energy is ``(E_plus + E_minus)`` and
     its normalized cross-helicity is
     ``(E_minus - E_plus) / (E_plus + E_minus)`` for this potential convention.
     """
@@ -188,12 +188,12 @@ def elsasser_energies(
     zeta_plus_hat = phi_hat - state["psi"]
     zeta_minus_hat = phi_hat + state["psi"]
     energy_plus = modal_average(
-        0.5 * grid.kperp2 * xp.abs(zeta_plus_hat) ** 2,
+        0.25 * grid.kperp2 * xp.abs(zeta_plus_hat) ** 2,
         grid,
         backend_obj,
     )
     energy_minus = modal_average(
-        0.5 * grid.kperp2 * xp.abs(zeta_minus_hat) ** 2,
+        0.25 * grid.kperp2 * xp.abs(zeta_minus_hat) ** 2,
         grid,
         backend_obj,
     )

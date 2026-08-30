@@ -719,7 +719,7 @@ def random_spectrum_one_wave(
 
     We send one alfven wave, so we set an initial condition of z+, and rest
     of the evolution fields to be 0. Hence we set the initial condition 
-    of Phi to some random number then set Psi = Phi, and rest of the variables to 0. 
+    of Phi to some random number then set Psi = -Phi, and rest of the variables to 0. 
     
     The variable Phi gets an independent random real field whose support is
     limited to the shell band `n_min_prl <= n_z <= n_max_prl`, 'n_min_perp <=
