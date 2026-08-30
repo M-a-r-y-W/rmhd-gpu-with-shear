@@ -34,8 +34,8 @@ DEFAULT_INITIAL_CONDITION = "alfven_mode"
 SCALAR_DIAGNOSTIC_INFO = {
     **STANDARD_ENERGY_SCALAR_DIAGNOSTIC_INFO,
     "alfvenic_energy": "Total two-field Alfvenic energy: 0.5 <|grad phi|^2 + |grad psi|^2>.",
-    "z_plus_energy": "Total two_field Alfvenic energy propagating outwards: 0.25 <|grad phi + grad psi|^2>",
-    "z_minus_energy": "Total two_field Alfvenic energy propagating inwards: 0.25 <|grad phi - grad psi|^2>", 
+    "z_plus_energy": "Total two_field Alfvenic energy propagating outwards: 0.25 <|grad phi - grad psi|^2>",
+    "z_minus_energy": "Total two_field Alfvenic energy propagating inwards: 0.25 <|grad phi + grad psi|^2>", 
     "normalised_cross_helicity": "Normalised cross helicity: (z_plus_energy - z_minus_energy) / alfvenic_energy",
 }
 
@@ -331,8 +331,8 @@ def _energy_modal_densities(
     return {
         "u_perp": 0.5 * kperp2 * (xp.abs(phi_hat) ** 2),
         "b_perp": 0.5 * kperp2 * (xp.abs(state["psi"]) ** 2),
-        "z_plus": 0.25 * kperp2 * (xp.abs(phi_hat + state["psi"]) ** 2),
-        "z_minus": 0.25 * kperp2 * (xp.abs(phi_hat - state["psi"]) ** 2),
+        "z_plus": 0.25 * kperp2 * (xp.abs(phi_hat - state["psi"]) ** 2),
+        "z_minus": 0.25 * kperp2 * (xp.abs(phi_hat + state["psi"]) ** 2),
     }
 
 def perpendicular_energy_spectra(
@@ -371,13 +371,13 @@ def parallel_energy_spectra(
 
 
 def z_plus_energy(state:State, grid:Any, backend:Any, params:Any)-> float:
-    """Return the total z+ energy: 0.25 <|grad phi + grad psi|^2>."""
+    """Return the total z+ energy: 0.25 <|grad phi - grad psi|^2>."""
 
     z_plus_density= _energy_modal_densities(state,grid,backend,params)["z_plus"]
     return modal_average(z_plus_density, grid, backend)
 
 def z_minus_energy(state:State, grid:Any, backend:Any, params:Any)-> float:
-    """Return the total z- energy: 0.25 <|grad phi - grad psi|^2>."""
+    """Return the total z- energy: 0.25 <|grad phi + grad psi|^2>."""
 
     z_minus_density= _energy_modal_densities(state,grid,backend,params)["z_minus"]
     return modal_average(z_minus_density, grid, backend)

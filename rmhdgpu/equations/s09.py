@@ -307,8 +307,8 @@ def _energy_modal_densities(
         "b_perp": 0.5 * kperp2 * (xp.abs(state["psi"]) ** 2),
         "upar": 0.5 * (xp.abs(state["upar"]) ** 2),
         "dbpar": 0.5 * p.dbpar_energy_weight * (xp.abs(state["dbpar"]) ** 2),
-        "z_plus": 0.25 * kperp2 * (xp.abs(phi_hat + state["psi"]) ** 2),
-        "z_minus": 0.25 * kperp2 * (xp.abs(phi_hat - state["psi"]) ** 2),
+        "z_plus": 0.25 * kperp2 * (xp.abs(phi_hat - state["psi"]) ** 2),
+        "z_minus": 0.25 * kperp2 * (xp.abs(phi_hat + state["psi"]) ** 2),
     }
 
 def perpendicular_energy_spectra(
