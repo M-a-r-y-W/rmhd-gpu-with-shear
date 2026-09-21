@@ -175,7 +175,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
             kpara, energy_para= spectra[quantity][outerscale_time]
             Lpar, z_parallel_amp, Kmin, Kmax = integral_scale(kpara,energy_para)
             if Lpar is not None:
-                ax.axvline(2.0 * np.pi / Lpar, color="0.55", ls="--", lw=1.5, label=rf"Lpar $={Lpar:.3f}$")
+                ax.axvline(2.0 * np.pi / Lpar, color="0.55", ls="--", lw=1.5, label=rf"$L_{{\parallel}}$ $={Lpar:.2f}$")
             #if Kmin is not None:
             #    ax.axvline(Kmin, color="0.55", ls=":", lw=1.5)
             #if Kmax is not None:
@@ -203,10 +203,9 @@ def main(argv: list[str] | None = None) -> list[Path]:
                 y_fit,
                 color="tab:red",
                 ls="--",
-                lw=1.8,
+                lw=2,
                 label=(
-                    rf"fit ($t={fit_time:.3g}$): $s={slope:.3f}\pm{stderr:.3f}$"
-                    rf" $\rightarrow$ $\alpha_\parallel=-s={implied_alpha_prl:.2f}$"
+                    rf"fit ($t={fit_time:.3g}$): $s={slope:.2f}\pm{stderr:.2f}$"
                 ),
             )
             fit_span = (
@@ -247,16 +246,18 @@ def main(argv: list[str] | None = None) -> list[Path]:
 
         sm = cm.ScalarMappable(norm=time_norm, cmap=cmap)
         colorbar = fig.colorbar(sm, ax=ax)
-        colorbar.set_label(r"Time / $\tau_A$")
+        colorbar.ax.tick_params(labelsize=14)
+        colorbar.set_label(r"Time / $\tau_A$", fontsize=16)
 
-        ax.set_xlabel(r"$k_\parallel$")
-        ax.set_ylabel(r"$E[k_\parallel]$")
-        ax.set_title(quantity)
+        ax.set_xlabel(r"$k_\parallel$", fontsize=18)
+        ax.set_ylabel(r"$E[k_\parallel]$", fontsize=18)
+        ax.tick_params(axis="both", labelsize=14)
+        #ax.set_title(quantity, fontsize=18)
         ax.grid(True, alpha=0.25)
         if args.y_span_decades > 0.0 and ymax > 0.0:
             ax.set_ylim(ymax / (10.0 ** args.y_span_decades), ymax * 3.0)
         if fit is not None or guide_line is not None or Lpar is not None:
-            ax.legend(fontsize=8)
+            ax.legend(fontsize=14)
 
         output_path = output_dir / f"{quantity}.png"
         finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)

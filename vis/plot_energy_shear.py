@@ -104,27 +104,31 @@ def main(argv: list[str] | None = None) -> Path:
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    colours = ["red", "blue"]
-    fig, axes = plt.subplots()
+    colours = ["tab:red", "tab:blue"]
+    fig, axes = plt.subplots(figsize=(8, 4.8), constrained_layout=True)
     for index, term_name in enumerate(rhs_term_names):
         axes.plot(
             time,
             columns[term_name],
-            lw=1.8,
+            lw=3,
             ls="-",
             label=term_name,
             color=colours[index % len(colours)],
         )
     for idex, term_names in enumerate(rhs_term_names):
         if not np.isnan(steady_state_rate[idex]):
-           axes.axhline(steady_state_rate[idex],label= f"Steady state rate for {term_names} ={steady_state_rate[idex]:.3f}", color= "0.4", lw=1.5, ls="--")
+           axes.axhline(steady_state_rate[idex],label= f"Steady state rate for {term_names} ={steady_state_rate[idex]:.3f}", color= "0.4", lw=2, ls="--")
         
     axes.axhline(0.0, color="0.4", lw=1.0, alpha=0.6)
-    axes.set_xlabel(r"Time / $\tau_A$")
-    axes.set_title("Comparing Energy Dissipation and Shear Heating Rates")
-    axes.set_ylabel(r"Energy Density Rates /d$_t Q$")
+    axes.set_xlabel(r"Time / $\tau_A$", fontsize=18)
+    #axes.set_title("Comparing Energy Dissipation and Shear Heating Rates")
+    axes.set_ylabel(r"Energy Density Rates d$_t Q$", fontsize=18)
+    axes.tick_params(axis="both", labelsize=14)
     axes.grid(True, alpha=0.3)
-    axes.legend(fontsize=8)
+    handles, labels = axes.get_legend_handles_labels()
+    label_map = {"total_energy_rhs_dissipation": "dissipation", "total_energy_rhs_shear":"shear"}
+    new_labels = [label_map.get(l, l) for l in labels]
+    axes.legend(handles, new_labels,fontsize=14)
 
     finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)
     return output_path

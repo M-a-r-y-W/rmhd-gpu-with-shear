@@ -75,12 +75,13 @@ def main(argv: list[str] | None = None) -> Path:
     fig, ax = plt.subplots(figsize=(8, 4.8), constrained_layout=True)
     
     ax.errorbar(alpha, ratio, yerr=std, fmt='o', label= "Numerical")
-    ax.plot(theory_alpha, theory_alpha**2, lw=2, ls= "--", color= "black", label="Theoretical")
+    ax.plot(theory_alpha, theory_alpha**2, lw=3, ls= "--", color= "black", label="Analytical")
     
-    ax.set_xlabel(r"$\alpha$")
-    ax.set_ylabel(r"Unweighted $E_{\delta b_\parallel} / E_{u_\parallel}$")
-    ax.set_title("Ratio of upar energy to dbpar energy: numerical vs theoretical")
-    ax.legend()
+    ax.set_xlabel(r"$\alpha$", fontsize=18)
+    ax.set_ylabel(r"Unweighted $E{\delta b_\parallel} / E{u_\parallel}$", fontsize=18)
+    ax.tick_params(axis="both", labelsize=14)
+    #ax.set_title("Ratio of upar energy to dbpar energy: numerical vs theoretical")
+    ax.legend(fontsize=14)
     ax.grid(True, alpha=0.3)
     
     output_path = (

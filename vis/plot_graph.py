@@ -1,6 +1,6 @@
 """Plots the rhs_shear energy rate against the dissipation rate and determines the steady state dissipation rate. ONLY DISSIPATION RATE USED
 """
-
+#THIS ONE FOR SEMINAR, HAVE HEATING ESTIMATE CALCULATED FROM DIFFERENT PARAMETERS FROM DIFFERENT SPECTRA
 from __future__ import annotations
 
 import argparse

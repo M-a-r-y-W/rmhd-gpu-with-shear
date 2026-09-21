@@ -166,9 +166,13 @@ def main(argv: list[str] | None = None) -> list[Path]:
             aspect="auto",
         )
         fig.colorbar(image, ax=ax, label="Amplitude")
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel(ylabel)
-        ax.set_title(rf"{args.field}: {args.slice_dir} index={slice_index}, t={time_value:.3f} $\tau_A$, step={step_value}")
+        #cbar.ax.tick_params(size=0)
+        ax.set_xlabel(xlabel, fontsize=18)
+        ax.set_ylabel(ylabel, fontsize=18)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        #ax.set_title(rf"{args.field}: {args.slice_dir} index={slice_index}, t={time_value:.3f} $\tau_A$, step={step_value}")
+        print(f"{args.field}: {args.slice_dir} index={slice_index}, t={time_value:.3f}, step={step_value}")
 
         output_path = output_dir / f"{args.field}_{args.slice_dir}_{key}.png"
         finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)

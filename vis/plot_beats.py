@@ -210,14 +210,15 @@ def main(argv: list[str] | None = None) -> list[Path]:
             num_sol.append(numerical_sol)
             theo_sol.append(theoretical_sol)
 
-    fig,ax= plt.subplots()
+    fig,ax= plt.subplots(figsize=(8, 4.8), constrained_layout=True)
 
-    ax.plot(time, num_sol, label="Numerical Solution", color="black", ls="-")
-    ax.plot(time, theo_sol, label="Theoretical Solution", color="red", ls="--")
-    ax.set_xlabel(r"Time / $\tau_A$")
-    ax.set_ylabel("Amplitude")
-    ax.set_title("Comparison of Numerical and Theoretical Linearised Slow Waves over Time")
-    ax.legend()
+    ax.plot(time, num_sol, label="Numerical", color="tab:blue", ls="-", lw=3)
+    ax.plot(time, theo_sol, label="Analytical", color="tab:red", ls="--", lw=3)
+    ax.set_xlabel(r"Time / $\tau_A$", fontsize=18)
+    ax.set_ylabel("Amplitude", fontsize=18)
+    ax.tick_params(axis="both", labelsize=14)
+    #ax.set_title("Comparison of Numerical and Theoretical Linearised Slow Waves over Time")
+    ax.legend(fontsize=14)
 
     output_dir = (
                 (input_path if input_path.is_dir() else input_path.parent) / "linearised_slow_wave_comparison"

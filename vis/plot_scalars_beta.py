@@ -40,14 +40,14 @@ def _read_scalar_csv(path: Path) -> tuple[list[str], dict[str, np.ndarray]]:
 
 def _default_columns(fieldnames: list[str]) -> list[str]:
     preferred = [
-        "total_energy",
+        #"total_energy",
         "alfvenic_energy",
         "upar_energy",
         "dbpar_energy",
-        "a_energy",
+        #"a_energy",
         #"entropy_variance",
-        "total_energy_proxy",
-        "alfvenic_cross_helicity",
+        #"total_energy_proxy",
+        #"alfvenic_cross_helicity",
     ]
     selected = [name for name in preferred if name in fieldnames]
     if selected:
@@ -129,20 +129,25 @@ def main(argv: list[str] | None = None) -> Path:
             raise SystemExit("No strictly positive scalar columns were selected for --log plotting.")
 
     fig, ax = plt.subplots(figsize=(8, 4.8), constrained_layout=True)
-    for name in plotted_columns:
-        ax.plot(time, columns[name], lw=2, label=name)
+    colours = ["tab:red", "tab:green", "tab:blue"]
+    for index, name in enumerate(plotted_columns):
+        ax.plot(time, columns[name], lw=3, label=name, color=colours[index % len(colours)])
+    
+    #ax.plot(time, dbscaled, lw=3, ls= "--", color= "black", label=r"$\delta$dpar scaled from $\delta$upar")
+    ax.plot(time, Eupar, lw=3, ls= "--", color= "tab:green", label=r"$\delta u_{\parallel}$ scaled")
+    ax.plot(time, Edbpar, lw=3, ls= "--", color= "tab:blue", label=r"$\delta b_{\parallel}$ scaled")
 
-    ax.plot(time, dbscaled, lw=2, ls= "--", color= "black", label="Scaled dbpar from upar")
-    ax.plot(time, Eupar, lw=2, ls= "--", color= "red", label="Scaled Eupar from Total")
-    ax.plot(time, Edbpar, lw=2, ls= "--", color= "orange", label="Scaled Edbpar from Total")
-
-    ax.set_xlabel(r"Time / $\tau_A$")
-    ax.set_ylabel("Energy Density")
-    ax.set_title("Scalar Diagnostics")
-    if args.log:
-        ax.set_yscale("log")
+    ax.set_xlabel(r"Time / $\tau_A$", fontsize=18)
+    ax.set_ylabel("Energy Density", fontsize=18)
+    ax.tick_params(axis="both", labelsize=14)
+    #ax.set_title("Scalar Diagnostics")
+    #if args.log:
+    ax.set_yscale("log")
+    handles, labels = ax.get_legend_handles_labels()
+    label_map = {"alfvenic_energy": "Alfven", "upar_energy": r"$\delta u_{\parallel}$", "dbpar_energy":r"$\delta b_{\parallel}$"}
+    new_labels = [label_map.get(l, l) for l in labels]
     ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=8)
+    ax.legend(handles, new_labels,fontsize=14)
 
     finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)
     return output_path

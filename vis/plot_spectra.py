@@ -142,7 +142,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
             mask = (kperp > 0.0) & (values > 0.0)
             if np.any(mask):
                 ymax = max(ymax, float(np.max(values[mask])))
-            ax.loglog(kperp[mask], values[mask], color=cmap(time_norm(time_value)), lw=2)
+            ax.loglog(kperp[mask], values[mask], color=cmap(time_norm(time_value)), lw=2.5)
 
         Lperp= None
         if quantity=="z_plus":
@@ -152,7 +152,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
            kperpen, energy_perpen= spectra[quantity][outerscale_time]
            Lperp, z_plus_amp, Kmin, Kmax = integral_scale(kperpen,energy_perpen)
            if Lperp is not None:
-              ax.axvline(2.0 *np.pi/Lperp, color="0.55", ls="--", lw=1.5, label=rf"Lperp $={Lperp:.3f}$")
+              ax.axvline(2.0 *np.pi/Lperp, color="0.55", ls="--", lw=2, label=rf"Lperp $={Lperp:.3f}$")
            if Kmin is not None:
               ax.axvline(Kmin, color="0.55", ls=":", lw=1.5)
            if Kmax is not None:
@@ -163,20 +163,22 @@ def main(argv: list[str] | None = None) -> list[Path]:
         guide_line = _guide_line(*latest_curve)
         if guide_line is not None:
             guide_k, guide_y = guide_line
-            ax.loglog(guide_k, guide_y, color="0.55", ls=":", lw=1.6, label=r"$k^{-5/3}$ guide")
+            ax.loglog(guide_k, guide_y, color="0.55", ls=":", lw=2, label=r"$k^{-5/3}$ guide")
 
         sm = cm.ScalarMappable(norm=time_norm, cmap=cmap)
         colorbar = fig.colorbar(sm, ax=ax)
-        colorbar.set_label(r"Time / $\tau_A$")
+        colorbar.ax.tick_params(labelsize=14)
+        colorbar.set_label(r"Time / $\tau_A$", fontsize=16)
 
-        ax.set_xlabel(r"$k_\perp$")
-        ax.set_ylabel(r"$E[k_\perp]$")
-        ax.set_title(quantity)
+        ax.set_xlabel(r"$k_\perp$", fontsize=18)
+        ax.set_ylabel(r"$E[k_\perp]$", fontsize=18)
+        ax.tick_params(axis="both", labelsize=14)
+        #ax.set_title(quantity)S
         ax.grid(True, alpha=0.25)
         if args.y_span_decades > 0.0 and ymax > 0.0:
             ax.set_ylim(ymax / (10.0 ** args.y_span_decades), ymax)
         if guide_line or Lperp is not None or z_plus_amp is not None or Kmin is not None or Kmax is not None:
-            ax.legend(fontsize=8)
+            ax.legend(fontsize=14)
 
         output_path = output_dir / f"{quantity}.png"
         finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)
@@ -187,3 +189,5 @@ def main(argv: list[str] | None = None) -> list[Path]:
 
 if __name__ == "__main__":
     main()
+
+# keep lines in here cause these plots won't be used

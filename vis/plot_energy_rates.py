@@ -115,33 +115,35 @@ def main(argv: list[str] | None = None) -> Path:
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    fig, axes = plt.subplots()
+    fig, axes = plt.subplots(figsize=(8, 4.8))
 
-    axes.set_title("Total Energy Density and Energy Budget Comparison")
+    #axes.set_title("Total Energy Density and Energy Budget Comparison")
 
     axes.plot(
         time,
         measured,
-        lw=1.8,
-        ls="--",
-        color="0.35",
-        label=rf"measured d$_t$ {args.quantity}",
-    )
-    axes.plot(
-        time,
-        columns[rhs_total_name],
-        lw=2.0,
-        color="0.45",
+        lw=2,
         ls="-",
-        label=f"saved {rhs_total_name}",
+        color="0.35",
+        label=rf"d$_t$ total",
     )
+    # axes.plot(
+    #     time,
+    #     columns[rhs_total_name],
+    #     lw=2.0,
+    #     color="0.45",
+    #     ls="-",
+    #     label=f"saved {rhs_total_name}",
+    # )
     term_linestyles = ["--", ":", "-."]
+    colours= ["tab:blue", "tab:red", "tab:green"]
     for index, term_name in enumerate(rhs_term_names):
         axes.plot(
             time,
             columns[term_name],
-            lw=1.8,
+            lw=2,
             ls=term_linestyles[index % len(term_linestyles)],
+            color=colours[index % len(colours)],
             label=term_name,
         )
     axes.plot(
@@ -150,13 +152,18 @@ def main(argv: list[str] | None = None) -> Path:
         lw=3.0,
         ls="-",
         color="black",
-        label=rf"closure residual: measured d$_t$ {args.quantity} - sum(saved RHS terms)",
+        label="residual",
     )
     axes.axhline(0.0, color="0.4", lw=1.0, alpha=0.6)
-    axes.set_xlabel(r"Time / $\tau_A$")
-    axes.set_ylabel(r"Energy Density Rate / d$_t Q$")
+    axes.set_xlabel(r"Time / $\tau_A$", fontsize=18)
+    axes.set_ylabel(r"Energy Density Rate d$_t Q$", fontsize=18)
+    axes.tick_params(axis="both", labelsize=14)
     axes.grid(True, alpha=0.3)
-    axes.legend(fontsize=8, loc="upper right", bbox_to_anchor=(0.5, -0.15), ncol=2)
+    handles, labels = axes.get_legend_handles_labels()
+    label_map = {"total_energy_rhs_dissipation": "dissipation", "total_energy_rhs_forcing": "forcing", "total_energy_rhs_shear":"shear"}
+    new_labels = [label_map.get(l, l) for l in labels]
+    axes.legend(handles, new_labels,fontsize=14)
+    
     plt.tight_layout()
 
     finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)
