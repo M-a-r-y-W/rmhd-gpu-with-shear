@@ -61,13 +61,14 @@ def main(argv: list[str] | None = None) -> Path:
 
     chi_A= [r"$\chi_A= 8.08$", r"$\chi_A= 4.85$", r"$\chi_A= 1.62$", r"$\chi_A= 0.85$", r"$\chi_A= 0.26$"]
     for i, row in enumerate(rows):
-        ax.plot(row["time"], row["diss_energy"], lw=2, label=chi_A[i])
+        ax.plot(row["time"], -row["diss_energy"], lw=2, label=chi_A[i])
 
     ax.set_xlabel(r"Time / $\tau_A$", fontsize=18)
     ax.set_ylabel(r"Energy Density Rates d$_t Q$", fontsize=18)
     ax.tick_params(axis="both", labelsize=14)
     ax.legend(fontsize=14)
     ax.grid(True, alpha=0.3)
+    ax.set_yscale("log")
     
     output_path = (
             Path.cwd() / "shear_comparison.png" if args.output is None
