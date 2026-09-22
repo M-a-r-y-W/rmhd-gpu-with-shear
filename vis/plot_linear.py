@@ -249,7 +249,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
                theoretical_sol=np.real(theoretical_amp_r*time_value*np.exp(1j*phase_alfven))
             else: theoretical_sol= np.real(theoretical_amp * (np.exp(1j*phase_alfven)-np.exp(1j*phase_slow)))
            
-            fig,ax= plt.subplots()
+            fig,ax= plt.subplots(constrained_layout=True)
 
             ax.plot(z, numerical_sol, label="Numerical", color="tab:blue", ls="-", lw=3)
             ax.plot(z, theoretical_sol, label="Analytical", color="tab:red", ls="--", lw=3)
@@ -260,7 +260,8 @@ def main(argv: list[str] | None = None) -> list[Path]:
             ax.set_ylim(-3.5, 3.5) # replace with max_z if you want dynamic scaling
             #ax.set_title(f"Comparison of Numerical and Theoretical Linearised Slow Waves, t={time_value:.1f}")
             ax.legend(fontsize=14)
-            ax.grid(True, which="both", ls="--", lw=0.4)
+            ax.grid(True, which="both", ls="--", lw=0.5)
+            fig.subplots_adjust(right=0.95, top=0.95, bottom=0.15)
            
             output_dir = (
                 (input_path if input_path.is_dir() else input_path.parent) / "linearised_slow_wave_comparison"

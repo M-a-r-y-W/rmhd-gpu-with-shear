@@ -219,6 +219,8 @@ def main(argv: list[str] | None = None) -> list[Path]:
     ax.tick_params(axis="both", labelsize=14)
     #ax.set_title("Comparison of Numerical and Theoretical Linearised Slow Waves over Time")
     ax.legend(fontsize=14)
+    ax.grid(True, which="both", ls="--", lw=0.5)
+    fig.subplots_adjust(right=0.95, top=0.95, bottom=0.15)
 
     output_dir = (
                 (input_path if input_path.is_dir() else input_path.parent) / "linearised_slow_wave_comparison"

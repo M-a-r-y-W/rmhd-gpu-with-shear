@@ -54,13 +54,13 @@ def main(argv: list[str] | None = None) -> Path:
     args = build_parser().parse_args(argv)
     plt = import_pyplot(show=args.show)
 
-    rows=[load_run(Path(d), column="dbpar_energy") for d in args.run_dirs]
+    rows=[load_run(Path(d)) for d in args.run_dirs]
     rows.sort(key=lambda r: r["run"]) # orders in terms of alpha value
 
 
     fig, ax = plt.subplots(figsize=(8, 4.8), constrained_layout=True)
 
-    chi_A= [r"$chi_A= 8.1$", r"$chi_A= 4.9$", r"$chi_A= 1.6$", r"$chi_A= 0.85$", r"$chi_A= 0.26$"]
+    chi_A= [r"$\chi_A= 8.1$", r"$\chi_A= 4.9$", r"$\chi_A= 1.6$", r"$\chi_A= 0.85$", r"$\chi_A= 0.26$"]
     for i, row in enumerate(rows):
             ax.plot(row["time"], row["dbpar_energy"], lw=2, label=chi_A[i])
     
