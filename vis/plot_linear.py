@@ -257,6 +257,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
             ax.set_xlabel("z", fontsize=18)
             ax.set_ylabel("Amplitude", fontsize=18)
             ax.tick_params(axis="both", labelsize=14)
+            ax.set_yscale("log")
             ax.set_ylim(-3.5, 3.5) # replace with max_z if you want dynamic scaling
             #ax.set_title(f"Comparison of Numerical and Theoretical Linearised Slow Waves, t={time_value:.1f}")
             ax.legend(fontsize=14)

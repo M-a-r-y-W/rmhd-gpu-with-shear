@@ -60,7 +60,7 @@ def main(argv: list[str] | None = None) -> Path:
 
     fig, ax = plt.subplots(figsize=(8, 4.8), constrained_layout=True)
 
-    chi_A= [r"$\chi_A= 8.1$", r"$\chi_A= 4.9$", r"$\chi_A= 1.6$", r"$\chi_A= 0.85$", r"$\chi_A= 0.26$"]
+    chi_A= [r"$\chi_A= 8.08$", r"$\chi_A= 4.85$", r"$\chi_A= 1.62$", r"$\chi_A= 0.85$", r"$\chi_A= 0.26$"]
     for i, row in enumerate(rows):
             ax.plot(row["time"], row["dbpar_energy"], lw=2, label=chi_A[i])
     
@@ -69,6 +69,7 @@ def main(argv: list[str] | None = None) -> Path:
     ax.tick_params(axis="both", labelsize=14)
     ax.legend(fontsize=14)
     ax.grid(True, alpha=0.3)
+    ax.set_yscale("log")
     
     output_path = (
             Path.cwd() / "dbpar_comparison.png" if args.output is None
