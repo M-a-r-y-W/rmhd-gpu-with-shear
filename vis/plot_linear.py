@@ -249,7 +249,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
                theoretical_sol=np.real(theoretical_amp_r*time_value*np.exp(1j*phase_alfven))
             else: theoretical_sol= np.real(theoretical_amp * (np.exp(1j*phase_alfven)-np.exp(1j*phase_slow)))
            
-            fig,ax= plt.subplots(figsize=(8, 4.8), constrained_layout=True)
+            fig,ax= plt.subplots()
 
             ax.plot(z, numerical_sol, label="Numerical", color="tab:blue", ls="-", lw=3)
             ax.plot(z, theoretical_sol, label="Analytical", color="tab:red", ls="--", lw=3)

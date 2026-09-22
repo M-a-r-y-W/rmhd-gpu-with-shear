@@ -210,7 +210,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
             num_sol.append(numerical_sol)
             theo_sol.append(theoretical_sol)
 
-    fig,ax= plt.subplots(figsize=(8, 4.8), constrained_layout=True)
+    fig,ax= plt.subplots()
 
     ax.plot(time, num_sol, label="Numerical", color="tab:blue", ls="-", lw=3)
     ax.plot(time, theo_sol, label="Analytical", color="tab:red", ls="--", lw=3)
