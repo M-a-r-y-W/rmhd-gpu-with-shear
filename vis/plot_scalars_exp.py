@@ -139,8 +139,8 @@ def main(argv: list[str] | None = None) -> Path:
 
     uexp= 0.660**2 * 1/4 
     bexp= 0.660**2 * 1/16 
-    ax.hline(y=uexp, color="tab:green", linestyle=":", linewidth=2)
-    ax.hline(y=bexp, color="tab:blue", linestyle=":", linewidth=2)
+    ax.axhline(y=uexp, color="tab:green", linestyle=":", linewidth=2)
+    ax.axhline(y=bexp, color="tab:blue", linestyle=":", linewidth=2)
 
     ax.set_xlabel(r"Time / $\tau_A$", fontsize=18)
     ax.set_ylabel("Energy Density", fontsize=18)
