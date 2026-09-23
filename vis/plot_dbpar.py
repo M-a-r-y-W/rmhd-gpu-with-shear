@@ -60,7 +60,7 @@ def main(argv: list[str] | None = None) -> Path:
 
     fig, ax = plt.subplots(figsize=(8, 4.8), constrained_layout=True)
 
-    chi_A= [r"$\chi_A= 8.08$", r"$\chi_A= 4.85$", r"$\chi_A= 1.62$", r"$\chi_A= 0.85$", r"$\chi_A= 0.26$"]
+    chi_A= [r"$\chi_A= 8.08$", r"$\chi_A= 4.84$", r"$\chi_A= 1.63$", r"$\chi_A= 0.99$", r"$\chi_A= 0.65$", r"$\chi_A= 0.27$"]
     for i, row in enumerate(rows):
             ax.plot(row["time"], row["dbpar_energy"], lw=2, label=chi_A[i])
     
