@@ -55,7 +55,6 @@ def main(argv: list[str] | None = None) -> Path:
     plt = import_pyplot(show=args.show)
 
     rows=[load_run(Path(d)) for d in args.run_dirs]
-    rows.sort(key=lambda r: r["run"]) # orders in terms of alpha value
 
     fig, ax = plt.subplots(figsize=(8, 4.8), constrained_layout=True)
 
