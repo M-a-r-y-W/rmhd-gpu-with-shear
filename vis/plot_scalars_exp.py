@@ -116,7 +116,7 @@ def main(argv: list[str] | None = None) -> Path:
         raise SystemExit(f"Unknown scalar columns requested: {unknown}.")
 
     output_path = (
-        csv_path.with_name("scalar_diagnostics_beta.png")
+        csv_path.with_name("scalar_diagnostics_beta_exp.png")
         if args.output is None
         else Path(args.output).expanduser().resolve()
     )
@@ -137,10 +137,10 @@ def main(argv: list[str] | None = None) -> Path:
     ax.plot(time, Eupar, lw=3, ls= "--", color= "tab:green", label=r"$\delta u_{\parallel}$ scaled")
     ax.plot(time, Edbpar, lw=3, ls= "--", color= "tab:blue", label=r"$\delta b_{\parallel}$ scaled")
 
-    uexp= 0.660**2 * 1/4 
-    bexp= 0.660**2 * 1/16 
-    ax.axhline(y=uexp, color="tab:green", linestyle=":", linewidth=2)
-    ax.axhline(y=bexp, color="tab:blue", linestyle=":", linewidth=2)
+    uexp= 0.67**2 * 1/4 
+    bexp= 0.67**2 * 1/16 
+    ax.axhline(y=uexp, color="tab:green", linestyle=":", linewidth=2, label=r"$\delta u_{\parallel}$ expected")
+    ax.axhline(y=bexp, color="tab:blue", linestyle=":", linewidth=2, label=r"$\delta b_{\parallel}$ expected")
 
     ax.set_xlabel(r"Time / $\tau_A$", fontsize=18)
     ax.set_ylabel("Energy Density", fontsize=18)
