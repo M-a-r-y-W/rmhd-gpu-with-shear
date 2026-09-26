@@ -193,7 +193,7 @@ def elsasser_energies(
         backend_obj,
     )
     energy_minus = modal_average(
-        0.25 * grid.kperp2 * xp.abs(zeta_minus_hat) ** 2,
+        0.25 * grid.kperp2 * xp.abs(zeta_minus_hat) ** 2, #removed abs
         grid,
         backend_obj,
     )
