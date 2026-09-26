@@ -87,7 +87,7 @@ def main(argv: list[str] | None = None) -> Path:
         raise SystemExit(f"Unknown scalar columns requested: {unknown}.")
 
     output_path = (
-        csv_path.with_name("scalar_diagnostics.png")
+        csv_path.with_name("scalar_diagnostics_alfvenic.png")
         if args.output is None
         else Path(args.output).expanduser().resolve()
     )
