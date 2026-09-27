@@ -1,4 +1,4 @@
-"""Plot scalar diagnostics saved by `rmhdgpu.run`."""
+"""Plot scalar diagnostics of the cross helicity saved by `rmhdgpu.run`."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ if __package__ in {None, ""}:
 
 import numpy as np
 
+from vis.plot_energy_shear import rolling_cv
 from vis._matplotlib import finalize_figure, import_pyplot
 
 
@@ -96,22 +97,40 @@ def main(argv: list[str] | None = None) -> Path:
         if not plotted_columns:
             raise SystemExit("No strictly positive scalar columns were selected for --log plotting.")
 
-    fig, ax = plt.subplots(figsize=(8, 4.8), constrained_layout=True)
-    colours = ["tab:red", "tab:green", "tab:blue", "tab:purple", "tab:pink"]
-    for index, name in enumerate(plotted_columns):
-        ax.plot(time, columns[name], lw=3, label=name, color=colours[index % len(colours)])
+    steady_state_rate= np.full(len(plotted_columns), np.nan)
+    for Index, names in enumerate(plotted_columns):
+        idx= rolling_cv(columns[names], 50, 0.1, 10)
+        if idx == None:
+            print(f"No steady state detected for {names}")
+            continue
+        Av_values= columns[names][idx:]
+        steady_state_rate[Index]= np.mean(Av_values) 
 
-    ax.set_xlabel(r"Time / $\tau_A$", fontsize=18)
-    ax.set_ylabel("Energy Density", fontsize=18)
-    ax.tick_params(axis="both", labelsize=14)
-    #ax.set_title("Scalar Diagnostics")
+    fig, axes = plt.subplots(figsize=(8, 4.8), constrained_layout=True)
+    colours = ["tab:red", "tab:blue"]
+
+    for index, term_name in enumerate(plotted_columns):
+            axes.plot(
+                time,
+                columns[term_name],
+                lw=3,
+                ls="-",
+                label=term_name,
+                color=colours[index % len(colours)],
+            )
+    label=[r"$\sigma_c$", r"$E_{+}/E_{-}$"]
+    for idex, term_names in enumerate(plotted_columns):
+        if not np.isnan(steady_state_rate[idex]):
+         axes.axhline(steady_state_rate[idex],label= label[idex]+ f"= {steady_state_rate[idex]:.3f}", color=colours[idex % len(colours)], lw=3, ls="--")
+
+    axes.set_xlabel(r"Time / $\tau_A$", fontsize=18)
+    axes.set_ylabel("Energy Density", fontsize=18)
+    axes.tick_params(axis="both", labelsize=14)
+    #axes.set_title("Scalar Diagnostics")
     #if args.log:
-    #ax.set_yscale("log")
-    handles, labels = ax.get_legend_handles_labels()
-    label_map = {"normalized_cross_helicity": r"$\sigma_c$", "elsasser_energy_ratio": r"$E_{+}/E_{-}$"}
-    new_labels = [label_map.get(l, l) for l in labels]
-    ax.grid(True, alpha=0.3)
-    ax.legend(handles, new_labels,fontsize=14)
+    #axes.set_yscale("log")
+    axes.grid(True, alpha=0.3)
+    axes.legend(fontsize=14)
 
     finalize_figure(fig, output_path=output_path, show=args.show, plt=plt)
     return output_path

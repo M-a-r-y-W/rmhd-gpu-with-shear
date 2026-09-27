@@ -112,7 +112,7 @@ def main(argv: list[str] | None = None) -> Path:
     ax.tick_params(axis="both", labelsize=14)
     #ax.set_title("Scalar Diagnostics")
     #if args.log:
-    #ax.set_yscale("log")
+    ax.set_yscale("log")
     handles, labels = ax.get_legend_handles_labels()
     label_map = {"alfvenic_energy": "Alfven", "elsasser_energy_plus": r"$E_{+}$", "elsasser_energy_minus": r"$E_{-}$", "normalized_cross_helicity": r"$\sigma_c$", "elsasser_energy_ratio": r"$E_{+}/E_{-}$"}
     new_labels = [label_map.get(l, l) for l in labels]
