@@ -203,7 +203,7 @@ def elsasser_energies(
         normalized_cross_helicity = 0.0
     else:
         ratio = float("inf") if energy_minus == 0.0 else energy_plus / energy_minus
-        normalized_cross_helicity = (energy_minus - energy_plus) / energy_sum
+        normalized_cross_helicity = (energy_plus-energy_minus) / energy_sum
     return {
         "elsasser_energy_plus": float(energy_plus),
         "elsasser_energy_minus": float(energy_minus),
