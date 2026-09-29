@@ -463,6 +463,42 @@ def total_energy_dissipation_rhs(
     )
     return modal_average(density_hat, grid, backend)
 
+def slow_energy_dissipation_rhs(
+    state: State,
+    grid: Any,
+    backend: Any,
+    linear_ops: dict[str, Any],
+    params: Any,
+) -> float:
+    """Return the signed slow wave dissipative contribution to `d_t E`.
+    """
+
+    xp = backend.xp
+    p = derived_parameters(params)
+    density_hat = (
+        - linear_ops["upar"] * xp.abs(state["upar"]) ** 2
+        - p.dbpar_energy_weight * linear_ops["dbpar"] * xp.abs(state["dbpar"]) ** 2
+    )
+    return modal_average(density_hat, grid, backend)
+
+def alfven_energy_dissipation_rhs(
+    state: State,
+    grid: Any,
+    backend: Any,
+    linear_ops: dict[str, Any],
+    params: Any,
+) -> float:
+    """Return the signed alfven dissipative contribution to `d_t E`.
+    """
+
+    xp = backend.xp
+    p = derived_parameters(params)
+    phi_hat = derive_phi_hat(state["omega"], grid)
+    density_hat = (
+        -linear_ops["omega"] * grid.kperp2 * (xp.abs(phi_hat) ** 2)
+        - linear_ops["psi"] * grid.kperp2 * (xp.abs(state["psi"]) ** 2)
+    )
+    return modal_average(density_hat, grid, backend)
 
 def compute_conserved_quantity_budgets(
     state: State,
@@ -481,13 +517,28 @@ def compute_conserved_quantity_budgets(
         "shear": total_energy_shear_rhs(state, grid, backend, params),
     }
     if linear_ops is not None:
-        rhs_terms["dissipation"] = total_energy_dissipation_rhs(
+        # rhs_terms["dissipation"] = total_energy_dissipation_rhs(
+        #     state,
+        #     grid,
+        #     backend,
+        #     linear_ops,
+        #     params,
+        # )
+        rhs_terms["alfven_dissipation"] = alfven_energy_dissipation_rhs(
             state,
             grid,
             backend,
             linear_ops,
             params,
         )
+        rhs_terms["slow_dissipation"] = slow_energy_dissipation_rhs(
+            state,
+            grid,
+            backend,
+            linear_ops,
+            params,
+        )
+        
     if extra_rhs_terms is not None:
         rhs_terms.update(
             {
@@ -549,7 +600,9 @@ def compute_equation_scalar_diagnostics(
     if budget_rhs_terms is not None and "total_energy" in budget_rhs_terms:
         rhs_terms.clear()
         rhs_terms.update({name: float(value) for name, value in budget_rhs_terms["total_energy"].items()})
-    rhs_terms.setdefault("dissipation", 0.0)
+    #rhs_terms.setdefault("dissipation", 0.0)
+    rhs_terms.setdefault("alfven_dissipation", 0.0)
+    rhs_terms.setdefault("slow_dissipation", 0.0)
     rhs_terms.setdefault("forcing", 0.0)
     diagnostics.update(flatten_conserved_quantity_budgets(budgets))
     return diagnostics

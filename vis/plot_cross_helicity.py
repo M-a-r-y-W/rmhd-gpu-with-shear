@@ -99,7 +99,7 @@ def main(argv: list[str] | None = None) -> Path:
 
     steady_state_rate= np.full(len(plotted_columns), np.nan)
     for Index, names in enumerate(plotted_columns):
-        idx= rolling_cv(columns[names], 50, 0.1, 10)
+        idx= rolling_cv(columns[names], 50, 0.075, 10)
         if idx == None:
             print(f"No steady state detected for {names}")
             continue
