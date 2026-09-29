@@ -175,21 +175,21 @@ def main(argv: list[str] | None = None) -> list[Path]:
             ax.loglog(kperp[mask], values[mask], color=cmap(time_norm(time_value)), lw=2.5)
 
         Lperp= None
-        if quantity=="z_plus":
+        if quantity=="z_plus" or quantity=="b_perp" or quantity=="u_perp":
             latest_time = max(spectra[quantity])
             if args.Lperp_time is not None:
                  outerscale_time= min(spectra[quantity], key=lambda t: abs(t - args.Lperp_time))
             else:outerscale_time= latest_time 
             kperpen, energy_perpen= spectra[quantity][outerscale_time]
-            Lperp, z_plus_amp, Kmin, Kmax = integral_scale(kperpen,energy_perpen)
+            Lperp, Amp, Kmin, Kmax = integral_scale(kperpen,energy_perpen)
             if Lperp is not None:
                 ax.axvline(2.0 * np.pi / Lperp, color="0.55", ls="--", lw=1.5, label=rf"$L_{{\perp}}$ $={Lperp:.2f}$")
 #           if Kmin is not None:
 #                ax.axvline(Kmin, color="0.55", ls=":", lw=1.5)
 #           if Kmax is not None:
 #                ax.axvline(Kmax, color="0.55", ls=":", lw=1.5)
-            if z_plus_amp is not None: 
-                ax.plot([], [], ' ', label=rf"$Z^{{+}}$ amp $={z_plus_amp:.2f}$") 
+            if Amp is not None: 
+                ax.plot([], [], ' ', label=rf"Amp $={Amp:.2f}$")   #$Z^{{+}}$ 
 
         quantity_times = sorted(spectra[quantity])
         if args.fit_time is None:

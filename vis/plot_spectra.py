@@ -102,9 +102,9 @@ def integral_scale(k: np.ndarray, spectrum: np.ndarray) -> tuple[float, float] |
     lout = 2.0 * np.pi /ave_k
     kmin= float(ave_k-5.0) # Think about changing bounds by mutliplying by a fraction or the bin_width
     kmax= float(ave_k+5.0) # bin_width = min(2.0 * np.pi / Lx, 2.0 * np.pi / Ly), would need config to get values from resolved toml file, see plot_linear.py
-    z_energy= float(np.sum(spectrum[(k>=kmin) & (k<=kmax)]))
-    Z_plus_amp= float(np.sqrt(4.0*z_energy))
-    return lout, Z_plus_amp, kmin, kmax
+    energy= float(np.sum(spectrum[(k>=kmin) & (k<=kmax)]))
+    amp= float(np.sqrt(4.0*energy))
+    return lout, amp, kmin, kmax
 
 
 def main(argv: list[str] | None = None) -> list[Path]:
@@ -145,20 +145,20 @@ def main(argv: list[str] | None = None) -> list[Path]:
             ax.loglog(kperp[mask], values[mask], color=cmap(time_norm(time_value)), lw=2.5)
 
         Lperp= None
-        if quantity=="z_plus":
+        if quantity=="z_plus" or quantity=="b_perp" or quantity=="u_perp":
            if args.Lperp_time is not None:
               outerscale_time= min(spectra[quantity], key=lambda t: abs(t - args.Lperp_time))
            else:outerscale_time= latest_time 
            kperpen, energy_perpen= spectra[quantity][outerscale_time]
-           Lperp, z_plus_amp, Kmin, Kmax = integral_scale(kperpen,energy_perpen)
+           Lperp, Amp, Kmin, Kmax = integral_scale(kperpen,energy_perpen)
            if Lperp is not None:
               ax.axvline(2.0 *np.pi/Lperp, color="0.55", ls="--", lw=2, label=rf"Lperp $={Lperp:.3f}$")
            if Kmin is not None:
               ax.axvline(Kmin, color="0.55", ls=":", lw=1.5)
            if Kmax is not None:
                ax.axvline(Kmax, color="0.55", ls=":", lw=1.5)
-           if z_plus_amp is not None: 
-              ax.plot([], [], ' ', label=rf"z_plus_amp $={z_plus_amp:.3f}$") 
+           if Amp is not None: 
+              ax.plot([], [], ' ', label=rf"Amp $={Amp:.3f}$") 
 
         guide_line = _guide_line(*latest_curve)
         if guide_line is not None:
@@ -177,7 +177,7 @@ def main(argv: list[str] | None = None) -> list[Path]:
         ax.grid(True, alpha=0.25)
         if args.y_span_decades > 0.0 and ymax > 0.0:
             ax.set_ylim(ymax / (10.0 ** args.y_span_decades), ymax)
-        if guide_line or Lperp is not None or z_plus_amp is not None or Kmin is not None or Kmax is not None:
+        if guide_line or Lperp is not None or Amp is not None or Kmin is not None or Kmax is not None:
             ax.legend(fontsize=14)
 
         output_path = output_dir / f"{quantity}.png"

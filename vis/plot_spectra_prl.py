@@ -167,21 +167,21 @@ def main(argv: list[str] | None = None) -> list[Path]:
             ax.plot(kprl[mask], values[mask], color=cmap(time_norm(time_value)), lw=2)
 
         Lpar= None
-        if quantity=="z_plus":
+        if quantity=="z_plus" or quantity=="b_perp" or quantity=="u_perp":
             latest_time = max(spectra[quantity])
             if args.Lpar_time is not None:
                 outerscale_time= min(spectra[quantity], key=lambda t: abs(t - args.Lpar_time))
             else:outerscale_time= latest_time 
             kpara, energy_para= spectra[quantity][outerscale_time]
-            Lpar, z_parallel_amp, Kmin, Kmax = integral_scale(kpara,energy_para)
+            Lpar, Amp, Kmin, Kmax = integral_scale(kpara,energy_para)
             if Lpar is not None:
                 ax.axvline(2.0 * np.pi / Lpar, color="0.55", ls="--", lw=1.5, label=rf"$L_{{\parallel}}$ $={Lpar:.2f}$")
             if Kmin is not None:
                 ax.axvline(Kmin, color="0.55", ls=":", lw=1.5)
             if Kmax is not None:
                 ax.axvline(Kmax, color="0.55", ls=":", lw=1.5)
-            if z_parallel_amp is not None:
-                ax.plot([], [], ' ', label=rf"z_parallel_amp $={z_parallel_amp:.3f}$")
+            if Amp is not None:
+                ax.plot([], [], ' ', label=rf"Amp $={Amp:.3f}$")
 
         earliest_time = min(spectra[quantity])
         _report_initial_modes(quantity, *spectra[quantity][earliest_time], earliest_time)
