@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> Path:
     rhs_term_names = sorted(
         name
         for name in fieldnames
-        if name == f"{args.quantity}_slow_dissipation" or name == f"{args.quantity}_rhs_shear"
+        if name == f"{args.quantity}_rhs_slow_dissipation" or name == f"{args.quantity}_rhs_shear"
     )
 
     steady_state_rate= np.full(len(rhs_term_names), np.nan)
