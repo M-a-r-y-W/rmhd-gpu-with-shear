@@ -173,7 +173,7 @@ def ideal_rhs(
     )
 
     rhs_dbpar = rhs_state["dbpar"]
-    rhs_dbpar[...] = p.alpha * dz(upar_hat, grid)
+    rhs_dbpar[...] = p.alpha * p.vA * dz(upar_hat, grid)
     rhs_dbpar[...] -= poisson_bracket(
         phi_hat,
         dbpar_hat,
@@ -193,7 +193,7 @@ def ideal_rhs(
     rhs_dbpar[...] -= p.Ku * p.alpha * dy(psi_hat, grid)
 
     rhs_upar = rhs_state["upar"]
-    rhs_upar[...] = (p.vA**2) * dz(dbpar_hat, grid)
+    rhs_upar[...] = (p.vA) * dz(dbpar_hat, grid)
     rhs_upar[...] -= poisson_bracket(
         phi_hat,
         upar_hat,
@@ -202,7 +202,7 @@ def ideal_rhs(
         workspace,
         mask=dealias_mask,
     )
-    rhs_upar[...] += (p.vA**2) * poisson_bracket(
+    rhs_upar[...] += poisson_bracket(
         psi_hat,
         dbpar_hat,
         grid,

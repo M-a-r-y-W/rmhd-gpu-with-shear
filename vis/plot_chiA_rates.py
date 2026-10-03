@@ -22,7 +22,7 @@ plt = import_pyplot(show=False)
 fig, ax = plt.subplots(figsize=(8, 4.8), constrained_layout=True)
   
 ax.scatter(chi_A, e_plus, label= "simulations", color= "tab:blue")
-#ax.scatter(chi_A, rate, label= "simulations (unscaled)", color= "tab:red")
+ax.scatter(chi_A, rate, label= "simulations (unscaled)", color= "tab:red")
 ax.set_xlabel(r"$\chi_A$", fontsize=18)
 ax.set_ylabel(r"Heating Efficiency Rate", fontsize=18)
 ax.set_ylim(0, 0.3)

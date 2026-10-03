@@ -36,9 +36,6 @@ t_out_full = 0.0
 backend = "numpy"
 fft_workers = 8
 
-[physics]
-vA = 2.0
-
 [forcing]
 use_forcing = true
 forcing_mode = "elsasser"

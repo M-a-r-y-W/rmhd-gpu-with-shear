@@ -39,7 +39,7 @@ dealias = true
 dealias_mode = "two_thirds"
 
 [physics]
-vA = 2.0
+vA = 1.0
 cs2_over_vA2 = 1.0
 N2 = 1.0
 Ku = 0.0
