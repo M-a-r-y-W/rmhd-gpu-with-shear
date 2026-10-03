@@ -31,7 +31,7 @@ fig, ax = plt.subplots(figsize=(8, 4.8), constrained_layout=True)
   
 ax.scatter(ch, e_plus, label= "simulations", color= "tab:blue")
 ax.scatter(ch, num_rate, label= "simulations (unscaled)", color= "tab:red")
-ax.set_xlabel(r"$sigma_c$", fontsize=18)
+ax.set_xlabel(r"$\sigma_c$", fontsize=18)
 ax.set_ylabel(r"Heating Efficiency Rate", fontsize=18)
 # ax.set_ylim(0, 0.3)
 # ax.set_xlim(0, 10)
