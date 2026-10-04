@@ -32,7 +32,7 @@ def load_run(run_dir: Path) -> dict:
 
     time = columns["time"] if "time" in columns else columns["t"]
 
-    idx= rolling_cv(columns["elsasser_energy_ratio"],50, 0.05, 10)
+    idx= rolling_cv(columns["elsasser_energy_ratio"],50, 0.1, 10)
     if idx == None:
         print(f"No steady state in energy ratio detected for {run_dir.name}")
     Av_values= columns["elsasser_energy_ratio"][idx:]
@@ -42,10 +42,18 @@ def load_run(run_dir: Path) -> dict:
     minus= config["forcing"]["epsilon_minus"] 
     alpha = plus/minus
     
+    idex= rolling_cv(columns["normalized_cross_helicity"],50, 0.1, 10)
+    if idex == None:
+        print(f"No steady state in energy ratio detected for {run_dir.name}")
+    Avg_values= columns["normalized_cross_helicity"][idex:]
+    Avg_helicity= float(np.mean(Avg_values))
+    Ratio= 1+Avg_helicity/(1-Avg_helicity)
+    
     return {
         "run": run_dir.name,
         "alpha": alpha,
         "ratio": Avg,
+        "helicityratio": Ratio,
         "std": std
     }
 
@@ -70,6 +78,7 @@ def main(argv: list[str] | None = None) -> Path:
 
     alpha= np.array([r["alpha"] for r in rows])
     ratio= np.array([r["ratio"] for r in rows])
+    helicityratio= np.array([r["helicityratio"] for r in rows])
     std= np.array([r["std"] for r in rows])
 
     theory_alpha= np.linspace(0, max(alpha), 200)
@@ -77,6 +86,7 @@ def main(argv: list[str] | None = None) -> Path:
     fig, ax = plt.subplots(figsize=(8, 4.8), constrained_layout=True)
     
     ax.errorbar(alpha, ratio, yerr=std, fmt='o', label= "Numerical")
+    ax.errorbar(alpha, helicityratio, yerr=std, fmt='o', label= "Numerical")
     ax.plot(theory_alpha, theory_alpha**2, lw=3, ls= "--", color= "black", label="Analytical")
     
     ax.set_xlabel(r"$\alpha_\epsilon$", fontsize=18)
